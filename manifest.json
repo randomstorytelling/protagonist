@@ -1,0 +1,14 @@
+{
+  "name": "Protagonist",
+  "short_name": "Protagonist",
+  "description": "Your life as a System. Stack mini-wins across six dimensions and level up your income.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05070e",
+  "theme_color": "#05070e",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

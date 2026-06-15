@@ -1,0 +1,13 @@
+# personal / generated data — never publish
+save.json
+save.json.bak
+whoop-today.json
+*.tmp
+
+# local-only helpers
+deploy/
+serve.js
+
+# misc
+node_modules/
+.DS_Store

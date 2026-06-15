@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#05070e" />
+<meta name="apple-mobile-web-app-title" content="Protagonist" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<title>The System</title>
+<style>
+  :root{
+    --bg:#05070e; --bg2:#080c16;
+    --panel:rgba(11,20,38,0.72); --panel-solid:#0b1426;
+    --cyan:#5fe0ff; --cyan-dim:#2b8fc7; --cyan-glow:rgba(95,224,255,0.40);
+    --blue:#2e7dff; --line:rgba(95,224,255,0.28);
+    --txt:#e6f4ff; --muted:#7d9bbd; --faint:#3a5170;
+    --faint2:#46607e;
+    --danger:#ff5469; --danger-glow:rgba(255,84,105,0.45);
+    --gold:#ffd76a;
+    --physical:#ff8a4c; --mental:#a78bfa; --spiritual:#ffd76a; --financial:#3fe0a0;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:
+    radial-gradient(120% 60% at 50% -10%, rgba(46,125,255,0.10), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(95,224,255,0.025) 0 1px, transparent 1px 3px),
+    var(--bg);
+    color:var(--txt);font-family:var(--sans);-webkit-font-smoothing:antialiased;}
+  body{max-width:540px;margin:0 auto;padding:16px 14px calc(120px + env(safe-area-inset-bottom));min-height:100vh;}
+
+  .sys-label{font-family:var(--mono);font-size:11px;letter-spacing:0.18em;color:var(--cyan-dim);text-transform:uppercase;}
+  .panel{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:5px;
+    box-shadow:0 0 0 1px rgba(95,224,255,0.05), 0 0 22px rgba(46,125,255,0.06), inset 0 0 30px rgba(46,125,255,0.05);
+    backdrop-filter:blur(6px);padding:14px;margin-bottom:12px;}
+  .panel:before,.panel:after{content:"";position:absolute;width:10px;height:10px;border:1.5px solid var(--cyan);opacity:0.7;}
+  .panel:before{top:-1px;left:-1px;border-right:0;border-bottom:0;}
+  .panel:after{bottom:-1px;right:-1px;border-left:0;border-top:0;}
+
+  /* header */
+  .hdr{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .crest{width:48px;height:48px;flex:0 0 auto;border:1.5px solid var(--cyan);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:600;font-size:15px;
+    color:var(--cyan);box-shadow:0 0 16px var(--cyan-glow), inset 0 0 12px rgba(95,224,255,0.18);}
+  .hdr .who{flex:1;min-width:0;}
+  .hdr .nm{font-size:17px;font-weight:600;letter-spacing:0.01em;}
+  .hdr .ttl{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:0.06em;margin-top:1px;}
+  .rankbadge{flex:0 0 auto;text-align:center;}
+  .rankbadge .r{font-family:var(--mono);font-weight:700;font-size:26px;line-height:1;color:var(--cyan);text-shadow:0 0 12px var(--cyan-glow);}
+  .rankbadge .lv{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-top:3px;}
+
+  .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .ph .t{font-family:var(--mono);font-size:12px;letter-spacing:0.12em;color:var(--cyan);text-transform:uppercase;}
+  .ph .meta{font-family:var(--mono);font-size:11px;color:var(--muted);}
+
+  .bar{height:8px;background:rgba(4,8,16,0.8);border:1px solid rgba(95,224,255,0.18);border-radius:99px;overflow:hidden;}
+  .bar > i{display:block;height:100%;border-radius:99px;transition:width .55s cubic-bezier(.2,.8,.2,1);}
+
+  /* income hero */
+  .hero .big{font-family:var(--mono);font-size:34px;font-weight:700;line-height:1;color:var(--gold);text-shadow:0 0 18px rgba(255,215,106,0.35);margin:2px 0 4px;}
+  .hero .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:10px;}
+  .hero .herobar > i{background:linear-gradient(90deg, var(--financial), var(--gold));}
+
+  /* buff */
+  .buff{display:flex;align-items:center;gap:14px;}
+  .buff .x{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--cyan);text-shadow:0 0 14px var(--cyan-glow);min-width:62px;}
+  .buff.locked .x{color:var(--danger);text-shadow:0 0 14px var(--danger-glow);}
+  .buff .cap{font-size:12px;color:var(--muted);line-height:1.45;}
+  .dots{display:flex;gap:7px;margin-top:7px;}
+  .dot{width:10px;height:10px;border-radius:2px;background:#1a2740;border:1px solid #243349;}
+  .dot.on{box-shadow:0 0 9px currentColor;}
+
+  /* penalty */
+  .penalty{border-color:var(--danger-glow);box-shadow:0 0 0 1px rgba(255,84,105,0.10),0 0 22px rgba(255,84,105,0.10);}
+  .penalty:before,.penalty:after{border-color:var(--danger);}
+  .penalty .t{color:var(--danger);}
+  .penalty p{margin:6px 0 0;font-size:12.5px;color:#ffb3bd;line-height:1.5;}
+
+  /* daily quest reqs */
+  .req{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(95,224,255,0.08);font-size:13px;}
+  .req:last-child{border-bottom:0;}
+  .req .ic{width:18px;text-align:center;font-family:var(--mono);}
+  .req .nm{flex:1;}
+  .req .ct{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .req.met .nm{color:var(--muted);text-decoration:line-through;}
+  .req.met .ic{color:var(--cyan);text-shadow:0 0 8px var(--cyan-glow);}
+  .warn{font-family:var(--mono);font-size:11px;color:#caa84a;margin-top:9px;letter-spacing:0.02em;}
+  .done-line{font-family:var(--mono);font-size:11px;color:var(--cyan);margin-top:9px;letter-spacing:0.04em;}
+
+  /* stats */
+  .stat{margin-bottom:11px;}
+  .stat:last-child{margin-bottom:0;}
+  .stat .row{display:flex;align-items:center;justify-content:space-between;}
+  .stat .nm{font-size:14px;font-weight:500;display:flex;align-items:center;gap:9px;}
+  .chip{width:10px;height:10px;border-radius:2px;}
+  .stat .lv{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .stat .reps{font-family:var(--mono);font-size:11px;color:var(--faint2);margin-top:3px;}
+  .alloc{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(95,224,255,0.18);}
+  .alloc .lab{font-family:var(--mono);font-size:11px;color:var(--cyan);margin-bottom:7px;letter-spacing:0.06em;}
+  .alloc .pts{color:var(--gold);}
+  .allocrow{display:flex;gap:6px;flex-wrap:wrap;}
+  .allocbtn{font-family:var(--mono);font-size:11px;padding:5px 9px;background:rgba(46,125,255,0.10);
+    border:1px solid var(--line);border-radius:4px;color:var(--txt);cursor:pointer;}
+  .allocbtn:active{background:rgba(46,125,255,0.22);}
+
+  /* recurring */
+  .rec{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(95,224,255,0.08);}
+  .rec:last-child{border-bottom:0;}
+  .rec .nm{font-size:13.5px;}
+  .rec .st{font-family:var(--mono);font-size:11px;color:var(--muted);}
+  .rec .st.due{color:var(--gold);}
+  .recbtn{font-family:var(--mono);font-size:11px;padding:5px 11px;border:1px solid var(--line);border-radius:4px;
+    background:rgba(46,125,255,0.10);color:var(--txt);cursor:pointer;white-space:nowrap;}
+  .recbtn.due{border-color:var(--gold);color:var(--gold);box-shadow:0 0 10px rgba(255,215,106,0.18);}
+
+  /* primary action */
+  .repbtn{position:relative;width:100%;border:1px solid var(--cyan);border-radius:5px;padding:15px;
+    font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--cyan);background:rgba(46,125,255,0.10);cursor:pointer;margin-bottom:8px;
+    box-shadow:0 0 18px rgba(46,125,255,0.18), inset 0 0 18px rgba(95,224,255,0.06);}
+  .repbtn:active{transform:scale(.99);background:rgba(46,125,255,0.2);}
+  .suggest{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-bottom:16px;}
+  .suggest b{color:var(--txt);}
+
+  /* log */
+  .logitem{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid rgba(95,224,255,0.07);font-size:12.5px;}
+  .logitem .nm{color:var(--muted);}
+  .logitem .src{font-family:var(--mono);font-size:9px;color:var(--cyan-dim);border:1px solid rgba(95,224,255,0.2);border-radius:3px;padding:0 4px;margin-left:6px;}
+  .logitem .xp{font-family:var(--mono);font-weight:600;}
+
+  /* smart input */
+  .smartrow{display:flex;gap:8px;}
+  .smartrow input{flex:1;min-width:0;background:rgba(4,8,16,0.7);border:1px solid var(--line);border-radius:5px;color:var(--txt);font-family:var(--sans);font-size:14px;padding:11px 12px;outline:none;}
+  .smartrow input:focus{border-color:var(--cyan);box-shadow:0 0 12px rgba(95,224,255,0.15);}
+  .smartrow input::placeholder{color:var(--faint2);}
+  .smartrow button{flex:0 0 auto;width:46px;border:1px solid var(--cyan);border-radius:5px;background:rgba(46,125,255,0.12);color:var(--cyan);font-size:17px;cursor:pointer;}
+  .smartrow button:active{background:rgba(46,125,255,0.26);}
+  .actpreview{margin-top:11px;}
+  .pvline{font-size:13px;color:var(--muted);margin-bottom:9px;}
+  .pvline b{color:var(--txt);}
+  .pvline .x{font-family:var(--mono);color:var(--cyan);}
+  .pvlow{color:#caa84a;font-family:var(--mono);font-size:11px;margin-left:4px;}
+  .dchips{display:flex;gap:6px;flex-wrap:wrap;}
+  .dchip{font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:4px;background:rgba(255,255,255,0.03);border:1px solid var(--line);color:var(--muted);cursor:pointer;}
+  .dchip.on{color:#06121f;border-color:var(--c);background:var(--c);box-shadow:0 0 10px var(--c);}
+  .logitbtn{margin-top:10px;width:100%;font-family:var(--mono);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;padding:10px;border:1px solid var(--cyan);border-radius:5px;background:rgba(46,125,255,0.12);color:var(--cyan);cursor:pointer;}
+  .logitbtn:active{background:rgba(46,125,255,0.26);}
+  .whooprow{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(95,224,255,0.08);}
+  .whoopbtn{font-family:var(--mono);font-size:12px;letter-spacing:0.04em;padding:8px 12px;border:1px solid var(--line);border-radius:5px;background:rgba(46,125,255,0.10);color:var(--cyan);cursor:pointer;}
+  .whoopbtn:active{background:rgba(46,125,255,0.24);}
+  .whoophint{font-size:11px;color:var(--faint2);}
+
+  /* bottom sheet */
+  .scrim{position:fixed;inset:0;background:rgba(2,4,9,0.7);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;z-index:40;}
+  .scrim.show{opacity:1;pointer-events:auto;}
+  .sheet{position:fixed;left:0;right:0;bottom:0;max-width:540px;margin:0 auto;background:var(--panel-solid);
+    border-top:1px solid var(--cyan);border-radius:14px 14px 0 0;box-shadow:0 -8px 40px rgba(46,125,255,0.18);
+    transform:translateY(110%);transition:transform .3s cubic-bezier(.2,.8,.2,1);z-index:41;
+    max-height:84vh;overflow-y:auto;padding:14px 14px calc(22px + env(safe-area-inset-bottom));}
+  .sheet.show{transform:translateY(0);}
+  .grab{width:40px;height:4px;border-radius:99px;background:rgba(95,224,255,0.3);margin:0 auto 14px;}
+  .grouplab{font-family:var(--mono);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;margin:14px 0 8px;}
+  .reprow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px;border:1px solid rgba(95,224,255,0.14);border-radius:5px;margin-bottom:7px;cursor:pointer;}
+  .reprow:active{background:rgba(46,125,255,0.12);}
+  .reprow .t{font-size:13.5px;}
+  .reprow .v{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;}
+  .big-badge{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:0.1em;color:#06120d;background:var(--gold);padding:2px 5px;border-radius:3px;margin-left:7px;vertical-align:1px;}
+
+  /* notification windows */
+  .notewrap{position:fixed;left:0;right:0;top:14%;display:flex;justify-content:center;z-index:60;pointer-events:none;padding:0 16px;}
+  .note{min-width:260px;max-width:420px;background:rgba(8,16,32,0.92);border:1px solid var(--cyan);border-radius:6px;
+    box-shadow:0 0 26px var(--cyan-glow), inset 0 0 22px rgba(95,224,255,0.10);
+    padding:16px 18px;text-align:center;backdrop-filter:blur(8px);
+    opacity:0;transform:translateY(-12px) scale(.96);transition:opacity .28s, transform .28s;}
+  .note.show{opacity:1;transform:translateY(0) scale(1);}
+  .note.danger{border-color:var(--danger);box-shadow:0 0 26px var(--danger-glow), inset 0 0 22px rgba(255,84,105,0.10);}
+  .note .nt{font-family:var(--mono);font-size:13px;letter-spacing:0.18em;color:var(--cyan);text-shadow:0 0 12px var(--cyan-glow);margin-bottom:8px;}
+  .note.danger .nt{color:var(--danger);text-shadow:0 0 12px var(--danger-glow);}
+  .note .nl{font-size:13.5px;color:var(--txt);line-height:1.55;}
+  .note .nl + .nl{margin-top:3px;color:var(--muted);font-size:12.5px;}
+
+  .footnote{text-align:center;font-family:var(--mono);font-size:10px;color:var(--faint2);margin-top:20px;letter-spacing:0.08em;}
+  .reset{background:none;border:none;color:var(--faint2);font-family:var(--mono);font-size:10px;text-decoration:underline;cursor:pointer;}
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="crest" id="crest">LW</div>
+    <div class="who">
+      <div class="nm" id="pname">Lawrence</div>
+      <div class="ttl" id="ptitle">— the Player</div>
+    </div>
+    <div class="rankbadge"><div class="r" id="rank">E</div><div class="lv" id="plvl">LV 1</div></div>
+  </div>
+
+  <div class="panel hero">
+    <div class="ph"><span class="t">Income Level</span><span class="meta">main quest</span></div>
+    <div class="big" id="incLvl">Lv 1</div>
+    <div class="sub" id="incSub">0 income XP</div>
+    <div class="bar herobar"><i id="incBar" style="width:0%"></i></div>
+  </div>
+
+  <div class="panel buff" id="buffPanel">
+    <div class="x" id="mult">×1.0</div>
+    <div style="flex:1">
+      <div class="cap" id="buffCap"></div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
+
+  <div class="panel smart">
+    <div class="ph"><span class="t">Log Anything</span><span class="meta">just say what you did</span></div>
+    <div class="smartrow">
+      <input id="actInput" type="text" autocomplete="off" autocapitalize="sentences" placeholder="e.g. called my parents for 20 min" />
+      <button id="actGo" aria-label="log activity">▸</button>
+    </div>
+    <div id="actPreview" class="actpreview" style="display:none"></div>
+    <div class="whooprow">
+      <button id="whoopSync" class="whoopbtn">⌚ Sync WHOOP</button>
+      <span class="whoophint">imports today's WHOOP — recovery, sleep, workouts</span>
+      <input id="whoopFile" type="file" accept="application/json,.json" style="display:none" />
+    </div>
+  </div>
+
+  <div class="panel penalty" id="penaltyPanel" style="display:none">
+    <div class="ph"><span class="t">⚠ Penalty Active</span></div>
+    <p id="penaltyText"></p>
+  </div>
+
+  <div class="panel" id="dailyPanel">
+    <div class="ph"><span class="t">Daily Quest</span><span class="meta" id="dailyMeta">0 / 6</span></div>
+    <div id="dailyReqs"></div>
+    <div id="dailyFoot"></div>
+  </div>
+
+  <button class="repbtn" id="getRep">▸ Get a rep in</button>
+  <div class="suggest" id="suggest"></div>
+
+  <div class="panel" id="statsPanel">
+    <div class="ph"><span class="t">Stats</span><span class="meta">your six dimensions</span></div>
+    <div id="stats"></div>
+    <div class="alloc" id="allocBox" style="display:none">
+      <div class="lab">Ability points: <span class="pts" id="apCount">0</span> — assign them</div>
+      <div class="allocrow" id="allocRow"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="recPanel">
+    <div class="ph"><span class="t">Upkeep</span><span class="meta">recurring quests</span></div>
+    <div id="recList"></div>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><span class="t">System Log</span><span class="meta" id="streak"></span></div>
+    <div id="logList"></div>
+  </div>
+
+  <div class="footnote">
+    THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
+    <button class="reset" id="resetBtn">reset save</button>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <div class="sys-label" id="sheetTitle" style="margin-bottom:4px">Get a rep in</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px" id="sheetDesc"></div>
+    <div id="repList"></div>
+  </div>
+
+  <div class="notewrap"><div class="note" id="note"><div class="nt" id="noteTitle"></div><div id="noteBody"></div></div></div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+  var G = window.SYSTEM;
+  if(!G){ document.body.innerHTML = '<div style="padding:2rem;font-family:system-ui;color:#e6f4ff;background:#05070e;min-height:100vh;line-height:1.6">The System failed to load (engine.js missing). Please reload the app.</div>'; return; }
+  var KEY = "protagonist.v2";
+  var DIM = {
+    physical:{label:"Physical",hex:"#ff8a4c"},
+    mental:{label:"Mental",hex:"#a78bfa"},
+    spiritual:{label:"Spiritual",hex:"#ffd76a"},
+    family:{label:"Family",hex:"#ff6fae"},
+    social:{label:"Social",hex:"#56c2ff"},
+    financial:{label:"Financial",hex:"#3fe0a0"},
+  };
+  var st, queue = [], showing = false, audioCtx = null;
+
+  function now(){ return new Date(); }
+  function today(){ return G.dayIndex(now()); }
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){ if(!window.__saveWarned){ window.__saveWarned=true; try{ alert("Progress couldn't be saved — device storage may be full or blocked."); }catch(_){} } } }
+  function $(id){ return document.getElementById(id); }
+
+  function boot(){
+    var raw = localStorage.getItem(KEY);
+    if(!raw){ st = G.newState("Lawrence Whitaker", now()); save(); render(); return; }
+    var r = G.init(raw, now());
+    st = r.state; save();
+    render();
+    enqueue(r.events);
+  }
+
+  function apply(fn){
+    var r = fn();
+    if(!r) return;
+    st = r.state; save(); render(); enqueue(r.events);
+  }
+
+  // ---- notifications ----
+  var NOTE = {
+    LEVEL_UP: function(e){ return { t:"[ LEVEL UP ]", lines:["You are now Level "+e.to+".","All stats increased. +"+e.statPoints+" ability points."] }; },
+    RANK_UP: function(e){ return { t:"[ RANK UP ]", lines:["You have risen to "+e.to+(e.to==="National Level"?".":"-Rank.")] }; },
+    INCOME_LEVEL_UP: function(e){ return { t:"[ INCOME LEVEL UP ]", lines:["Income Level "+e.to+" reached."], gold:true }; },
+    TITLE_UNLOCKED: function(e){ return { t:"[ TITLE ACQUIRED ]", lines:['You earned the title "'+e.name+'".'], gold:true }; },
+    DAILY_COMPLETE: function(e){ return { t:"[ DAILY QUEST COMPLETE ]", lines:["+"+e.reward+" XP. The System is pleased."] }; },
+    PENALTY_INCURRED: function(){ return { t:"[ PENALTY ]", lines:["You failed a Daily Quest.","Income amplification is locked until you clear today's quest."], danger:true }; },
+    PENALTY_CLEARED: function(){ return { t:"[ PENALTY CLEARED ]", lines:["Daily Quest complete. Your power returns."] }; },
+    RECURRING_DONE: function(e){ return { t:"[ UPKEEP COMPLETE ]", lines:[e.name+" done. Logged to the System."] }; },
+  };
+  function enqueue(events){ (events||[]).forEach(function(e){ if(NOTE[e.type]) queue.push(NOTE[e.type](e)); }); pump(); }
+  function pump(){
+    if(showing || !queue.length) return;
+    showing = true;
+    var n = queue.shift();
+    var el = $("note");
+    el.className = "note" + (n.danger?" danger":"");
+    $("noteTitle").textContent = n.t;
+    $("noteBody").innerHTML = n.lines.map(function(l){ return '<div class="nl">'+esc(l)+'</div>'; }).join("");
+    if(!n.danger) ding(n.gold);
+    requestAnimationFrame(function(){ el.classList.add("show"); });
+    setTimeout(function(){ el.classList.remove("show"); setTimeout(function(){ showing=false; pump(); }, 320); }, 1900);
+  }
+  function ding(high){
+    try{
+      audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+      if(audioCtx.state==="suspended") audioCtx.resume();
+      var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type="sine"; o.frequency.value = high?1320:880;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.06, audioCtx.currentTime+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.4);
+      o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.42);
+    }catch(e){}
+  }
+
+  // ---- render ----
+  function titleName(id){ var t=G.TITLES.find(function(x){return x.id===id;}); return t?t.name:""; }
+  function render(){
+    var td = today();
+    $("crest").textContent = st.player.initials;
+    $("pname").textContent = st.player.name;
+    $("ptitle").textContent = st.activeTitle ? ("— "+titleName(st.activeTitle)) : "— the Player";
+    $("rank").textContent = G.rank(st);
+    $("plvl").textContent = "LV " + G.playerLevel(st);
+
+    var il = G.levelFromXp(st.incomeXp);
+    $("incLvl").textContent = "Lv " + il.level;
+    $("incSub").textContent = st.incomeXp + " income XP · " + (il.need - il.intoLevel) + " to next";
+    $("incBar").style.width = il.pct + "%";
+
+    var m = G.multiplier(st, td), pen = G.isPenalized(st), eng = G.engineDimsActive(st, td);
+    $("mult").textContent = "×" + m.toFixed(2);
+    $("buffPanel").className = "panel buff" + (pen?" locked":"");
+    var capN = Math.round((G.CONFIG.multiplier.max - G.CONFIG.multiplier.base) / G.CONFIG.multiplier.perEngineDim);
+    var need = Math.max(0, capN - eng);
+    $("buffCap").innerHTML = pen
+      ? 'Amplification <b style="color:var(--danger)">locked</b> — clear today\'s Daily Quest to restore it.'
+      : (eng >= capN ? 'Fully vibrant — your whole life is <b style="color:var(--cyan)">fueling your income</b>.'
+                 : 'Light up '+need+' more life area'+(need===1?'':'s')+' to raise your income rate.');
+    var dh = "";
+    G.ENGINE_DIMS.forEach(function(d){
+      var on = (st.history[td]&&st.history[td][d]>0);
+      dh += '<div class="dot'+(on?" on":"")+'" style="color:'+DIM[d].hex+';'+(on?'background:'+DIM[d].hex:'')+'"></div>';
+    });
+    $("dots").innerHTML = dh;
+
+    if(pen){ $("penaltyPanel").style.display=""; $("penaltyText").textContent = "You missed a Daily Quest. Income amplification is locked at ×1.0 and all bonuses are suspended until you complete today's Daily Quest."; }
+    else $("penaltyPanel").style.display="none";
+
+    // daily quest
+    var dp = G.dailyProgress(st, td), req = G.CONFIG.dailyQuest.requirements, rq="";
+    G.DIMENSIONS.forEach(function(d){
+      var have = (st.history[td]&&st.history[td][d])||0, need = req[d]||0, met = have>=need;
+      rq += '<div class="req'+(met?" met":"")+'"><span class="ic">'+(met?"✓":"○")+'</span>'
+          + '<span class="nm" style="color:'+(met?'':DIM[d].hex)+'">'+DIM[d].label+'</span>'
+          + '<span class="ct">'+Math.min(have,need)+' / '+need+'</span></div>';
+    });
+    $("dailyReqs").innerHTML = rq;
+    $("dailyMeta").textContent = dp.done + " / " + dp.total;
+    $("dailyFoot").innerHTML = dp.met
+      ? '<div class="done-line">✓ Daily Quest complete. The System is pleased.</div>'
+      : '<div class="warn">⚠ Failure to complete the Daily Quest will result in a penalty.</div>';
+
+    // stats
+    var sh = "";
+    G.DIMENSIONS.forEach(function(d){
+      var li = G.levelFromXp(st.dims[d]), rt = (st.history[td]&&st.history[td][d])||0;
+      var note = d==="financial" ? ' <span style="color:var(--faint2);font-weight:400">— income</span>' : '';
+      var alloc = st.statPoints.allocated[d] ? ' · '+st.statPoints.allocated[d]+' pts' : '';
+      sh += '<div class="stat"><div class="row"><div class="nm"><span class="chip" style="background:'+DIM[d].hex+'"></span>'+DIM[d].label+note+'</div><div class="lv">Lv '+li.level+'</div></div>'
+          + '<div class="bar" style="margin-top:7px"><i style="width:'+li.pct+'%;background:'+DIM[d].hex+'"></i></div>'
+          + '<div class="reps">'+rt+' today · '+st.dims[d]+' XP'+alloc+'</div></div>';
+    });
+    $("stats").innerHTML = sh;
+    if(st.statPoints.available>0){
+      $("allocBox").style.display="";
+      $("apCount").textContent = st.statPoints.available;
+      $("allocRow").innerHTML = G.DIMENSIONS.map(function(d){
+        return '<button class="allocbtn" data-dim="'+d+'">+ '+DIM[d].label+(d==="financial"?" (income+)":"")+'</button>';
+      }).join("");
+      Array.prototype.forEach.call($("allocRow").children, function(b){
+        b.onclick = function(){ apply(function(){ return G.allocateStat(st, b.getAttribute("data-dim"), now()); }); };
+      });
+    } else $("allocBox").style.display="none";
+
+    // recurring
+    var rs = G.recurringStatus(st, now()), rh="";
+    rs.forEach(function(x){
+      var stxt = x.due ? "DUE NOW" : ("due in "+x.daysUntilDue+"d");
+      rh += '<div class="rec"><div><div class="nm">'+x.name+'</div><div class="st'+(x.due?" due":"")+'">'+stxt+' · +'+x.xp+' XP</div></div>'
+          + '<button class="recbtn'+(x.due?" due":"")+'" data-rec="'+x.id+'">Log</button></div>';
+    });
+    $("recList").innerHTML = rh;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-rec]"), function(b){
+      b.onclick = function(){ apply(function(){ return G.applyRecurring(st, b.getAttribute("data-rec"), now()); }); };
+    });
+
+    // streak + log
+    var stk = st.streak.current||0;
+    $("streak").textContent = stk>0 ? (stk+"-day streak") : "no streak yet";
+    var lh = "";
+    if(!st.log.length) lh = '<div style="color:var(--faint2);font-size:12px;padding:6px 0">No entries yet. Get a rep in.</div>';
+    st.log.slice(0,12).forEach(function(e){
+      var c = (DIM[e.dim]||{}).hex||"#5fe0ff";
+      var src = e.source && e.source!=="manual" ? '<span class="src">'+esc(e.source)+'</span>' : '';
+      lh += '<div class="logitem"><div class="nm"><span class="chip" style="display:inline-block;background:'+c+';margin-right:7px"></span>'+esc(e.name)+src+'</div><div class="xp" style="color:'+c+'">+'+e.xp+'</div></div>';
+    });
+    $("logList").innerHTML = lh;
+
+    // suggestion
+    var low = G.suggestionDim(st, td);
+    var cand = G.repsForDim(low).filter(function(r){return !r.big;}).sort(function(a,b){return a.xp-b.xp;})[0];
+    $("suggest").innerHTML = cand ? ('Lagging: <b style="color:'+DIM[low].hex+'">'+DIM[low].label+'</b> — try "<b>'+cand.name+'</b>"') : "";
+  }
+
+  // ---- rep sheet ----
+  function openSheet(){
+    $("sheetTitle").textContent = "Get a rep in";
+    $("sheetDesc").textContent = "There's always a rep somewhere. Pick one.";
+    var html = "";
+    G.DIMENSIONS.forEach(function(d){
+      html += '<div class="grouplab" style="color:'+DIM[d].hex+'">'+DIM[d].label+'</div>';
+      G.repsForDim(d).forEach(function(r){
+        var shown = r.dim==="financial" ? Math.round(r.xp * G.multiplier(st, today()) * (G.isPenalized(st)?1:(1+G.totalBonusPct(st)/100))) : r.xp;
+        html += '<div class="reprow" data-rep="'+r.id+'"><div class="t"><span class="chip" style="display:inline-block;background:'+DIM[d].hex+';margin-right:8px"></span>'+r.name+(r.big?'<span class="big-badge">BIG WIN</span>':'')+'</div><div class="v">+'+shown+'</div></div>';
+      });
+    });
+    $("repList").innerHTML = html;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-rep]"), function(b){
+      b.onclick = function(){ closeSheet(); apply(function(){ return G.applyRep(st, b.getAttribute("data-rep"), now()); }); };
+    });
+    $("scrim").classList.add("show"); $("sheet").classList.add("show");
+    if(audioCtx && audioCtx.state==="suspended") audioCtx.resume();
+  }
+  function closeSheet(){ $("scrim").classList.remove("show"); $("sheet").classList.remove("show"); }
+
+  // ---- smart activity input ----
+  var selDim = null, selXp = 0, lastText = null;
+  function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+  function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function previewActivity(){
+    var text = $("actInput").value;
+    var cls = text.trim() ? G.classifyActivity(text) : null;
+    var box = $("actPreview");
+    if(!cls){ box.style.display="none"; selDim=null; lastText=null; return; }
+    if(lastText !== text){ selDim = cls.dim; lastText = text; }
+    selXp = (selDim === cls.dim) ? cls.xp : (cls.big ? 15 : cls.xp);
+    var chips = G.DIMENSIONS.map(function(d){
+      return '<button class="dchip'+(d===selDim?" on":"")+'" data-d="'+d+'" style="--c:'+DIM[d].hex+'">'+DIM[d].label+'</button>';
+    }).join("");
+    box.style.display="";
+    box.innerHTML = '<div class="pvline">→ <b>'+cls.category+'</b> · <span class="x">+'+selXp+' XP</span>'
+      + (cls.confidence < 0.4 ? '<span class="pvlow">not sure — tap the right one</span>' : '') + '</div>'
+      + '<div class="dchips">'+chips+'</div>'
+      + '<button class="logitbtn" id="logIt">▸ Log it</button>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-d]"), function(b){
+      b.onclick = function(){ selDim = b.getAttribute("data-d"); previewActivity(); };
+    });
+    $("logIt").onclick = logActivity;
+  }
+  function logActivity(){
+    var text = $("actInput").value.trim();
+    if(!text) return;
+    var cls = G.classifyActivity(text);
+    var dim = selDim || (cls ? cls.dim : "mental");
+    var xp = selXp || (cls ? cls.xp : 10);
+    var r = G.logActivity(st, text, now(), { dim:dim, xp:xp });
+    st = r.state; save();
+    $("actInput").value=""; $("actPreview").style.display="none"; selDim=null; lastText=null;
+    render();
+    if(r.classification){
+      queue.push({ t:"[ LOGGED ]", lines:['"'+(text.length>46?text.slice(0,44)+"…":text)+'"', "Sorted into "+r.classification.category+" — "+cap(r.classification.dim)+". +"+r.classification.xp+" XP."] });
+    }
+    enqueue(r.events);
+  }
+  // ---- WHOOP sync (file import; same engine path the game-master uses) ----
+  function ingestWhoopPayload(obj){
+    var acts = [];
+    if(Array.isArray(obj)) obj.forEach(function(d){ acts = acts.concat(G.whoopDayToActivities(d)); });
+    else if(obj && Array.isArray(obj.activities)) acts = obj.activities;
+    else if(obj && Array.isArray(obj.days)) obj.days.forEach(function(d){ acts = acts.concat(G.whoopDayToActivities(d)); });
+    else acts = G.whoopDayToActivities(obj);
+    var r = G.ingestExternal(st, acts, now());
+    st = r.state; save(); render();
+    queue.push({ t:"[ WHOOP SYNCED ]", lines:[ (r.credited.length||0)+" activities counted by the System.", "Your physical baseline is logged." ] });
+    enqueue(r.events);
+  }
+  $("whoopSync").onclick = function(){ $("whoopFile").click(); };
+  $("whoopFile").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0]; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){ try{ ingestWhoopPayload(JSON.parse(rd.result)); }catch(err){ alert("Couldn't read that WHOOP file."); } e.target.value=""; };
+    rd.readAsText(f);
+  });
+
+  $("actInput").addEventListener("input", previewActivity);
+  $("actGo").onclick = logActivity;
+  $("actInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); logActivity(); } });
+
+  $("getRep").onclick = openSheet;
+  $("scrim").onclick = closeSheet;
+  $("resetBtn").onclick = function(){ if(confirm("Reset the System? This wipes all progress.")){ st = G.newState("Lawrence Whitaker", now()); save(); render(); } };
+
+  // day rolled over while the app was open -> reconcile so penalties/streaks update (not just the UI)
+  function reconcileNow(){
+    if(!st || !st.daily) return;
+    if(G.dayIndex(now()) === st.daily.day) return;
+    var r = G.init(JSON.stringify(st), now());
+    st = r.state; save(); render(); enqueue(r.events);
+  }
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) reconcileNow(); });
+  window.addEventListener("focus", reconcileNow);
+
+  boot();
+})();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("service-worker.js").catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>
