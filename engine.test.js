@@ -568,6 +568,19 @@ test("REG ingestExternal tolerates non-array input without throwing", function (
   assert(Number.isFinite(r.state.dims.financial), "state intact");
 });
 
+test("completed Google Tasks classify into the right dimension and count as reps", function () {
+  eq(E.externalActivityToRep({ source: "google-tasks", kind: "task", id: "t1", title: "call my mom" }).dim, "family", "family task");
+  var fin = E.externalActivityToRep({ kind: "task", id: "t2", title: "send 25 outreach DMs" });
+  eq(fin.dim, "financial", "outreach task -> financial");
+  assert(fin.xp <= 30, "task xp capped");
+  assert(E.externalActivityToRep({ kind: "task", id: "t3", title: "random errand xyz" }).dim, "unknown-title task still maps via fallback");
+  var s = E.newState("L", D(0));
+  var acts = [{ source: "google-tasks", kind: "task", id: "g1", title: "meditate" }, { source: "google-tasks", kind: "task", id: "g2", title: "lift weights" }];
+  var r = E.ingestExternal(s, acts, D(0));
+  eq(r.credited.length, 2, "two completed tasks counted");
+  eq(E.ingestExternal(r.state, acts, D(0)).credited.length, 0, "deduped on re-sync");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");

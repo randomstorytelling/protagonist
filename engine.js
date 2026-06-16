@@ -555,6 +555,15 @@
         var amt = num(a.amount, 0);
         return { id: "sale", dim: "financial", name: "Sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), big: amt >= 200, source: a.source || "shopify" };
       }
+      case "task": {
+        // a completed Google Task -> classify its title into the right dimension (call mom -> family,
+        // send invoices -> financial, etc.); capped since a checkbox is a solid-but-small win.
+        var t = String(a.title || a.name || "");
+        var c = classifyActivity(t);
+        var tdim = c ? c.dim : "mental";
+        var txp = c ? Math.min(c.xp, 30) : 10;
+        return { id: "gtask", dim: tdim, xp: txp, name: (t || "Task") + " ✓", big: !!(c && c.big && tdim === "financial"), source: a.source || "google-tasks" };
+      }
       default:
         return null;
     }
