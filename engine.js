@@ -283,6 +283,7 @@
       for (var k in s.history) if (Object.prototype.hasOwnProperty.call(s.history, k)) {
         var dk = Number(k);
         if (!Number.isFinite(dk)) continue;
+        if (dk > today + 1) continue; // drop clock-glitch future days (today+1 grace for tz); you can't act in the future
         var src = s.history[k] || {}, day = emptyDay();
         DIMENSIONS.forEach(function (d) { day[d] = nonNeg(src[d]); });
         out.history[String(dk)] = day;
@@ -331,7 +332,7 @@
       };
     }
     out.version = SCHEMA_VERSION;
-    recomputeStreak(out); // streak is always derived, never trusted from disk
+    recomputeStreak(out, today); // streak is always derived, never trusted from disk
     return out;
   }
 
@@ -356,7 +357,7 @@
       return { ts: ts, day: Number.isFinite(dy) ? dy : null, dim: e.dim, repId: e.repId || null, name: e.name, baseXp: num(e.xp, 0), mult: num(e.mult, 1), xp: num(e.xp, 0) };
     }).slice(0, 200);
     s.statPoints.available = Math.max(0, (levelFromXp(s.totalXp).level - 1) * CONFIG.statPointsPerLevel);
-    recomputeStreak(s);
+    recomputeStreak(s, safeToday(now));
     return s;
   }
 
@@ -368,7 +369,7 @@
   }
 
   // streak is ALWAYS recomputed from history (single source of truth).
-  function recomputeStreak(s) {
+  function recomputeStreak(s, today) {
     var days = Object.keys(s.history).map(Number).filter(Number.isFinite).filter(function (d) {
       var h = s.history[d]; return h && DIMENSIONS.some(function (x) { return (h[x] || 0) > 0; });
     }).sort(function (a, b) { return a - b; });
@@ -377,7 +378,11 @@
     for (var i = 1; i < days.length; i++) { if (days[i] === days[i - 1] + 1) run++; else run = 1; if (run > longest) longest = run; }
     var cur = 1;
     for (var j = days.length - 1; j > 0; j--) { if (days[j] === days[j - 1] + 1) cur++; else break; }
-    s.streak = { current: cur, longest: longest, lastDay: days[days.length - 1] };
+    var lastDay = days[days.length - 1];
+    // a streak is only "current" if it reaches today or yesterday; once a full day is missed it's broken,
+    // so don't keep showing a live streak the player no longer has (must agree with any penalty incurred).
+    if (Number.isFinite(today) && lastDay < today - 1) cur = 0;
+    s.streak = { current: cur, longest: longest, lastDay: lastDay };
   }
 
   // roll forward to an explicit day; resolve missed days into exactly one penalty (never a stack).
@@ -455,7 +460,7 @@
 
     // RESET is a deliberate discontinuity, not progress: a higher epoch wins the whole save (no merge), so
     // "reset save" actually propagates across devices instead of being silently undone by the monotonic union.
-    if (A.epoch !== B.epoch) { var hi = clone(A.epoch > B.epoch ? A : B); recomputeStreak(hi); hi.version = SCHEMA_VERSION; return hi; }
+    if (A.epoch !== B.epoch) { var hi = clone(A.epoch > B.epoch ? A : B); recomputeStreak(hi, safeToday(now)); hi.version = SCHEMA_VERSION; return hi; }
 
     var out = clone(A);
     out.player.createdDay = Math.min(A.player.createdDay, B.player.createdDay); // earliest birth wins
@@ -548,7 +553,7 @@
     var pActive = !!(A.penalty.active && B.penalty.active);
     out.penalty = { active: pActive, sinceDay: pActive ? Math.max(num(A.penalty.sinceDay, 0), num(B.penalty.sinceDay, 0)) : null };
 
-    recomputeStreak(out);       // streak is always derived from the merged history
+    recomputeStreak(out, safeToday(now));       // streak is always derived from the merged history
     out.version = SCHEMA_VERSION;
     return out;
   }
@@ -577,7 +582,7 @@
       s.incomeXp += gained;
     }
 
-    recomputeStreak(s);
+    recomputeStreak(s, today);
 
     var ts = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
     s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual" });

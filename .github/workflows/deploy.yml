@@ -35,11 +35,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble site (app shell + the live WHOOP feed file)
+      - name: Assemble site (app shell only; GitHub Pages just redirects to the Firebase Hosting canonical)
         run: |
           mkdir -p _site
           cp index.html engine.js manifest.json service-worker.js icon.svg _site/
-          cp whoop-today.json _site/ 2>/dev/null || echo "no whoop-today.json to publish yet"
+          # WHOOP is PRIVATE now (cloud feed writes it to per-user Firestore) — never publish biometrics to Pages.
       - uses: actions/configure-pages@v5
         with:
           enablement: true

@@ -30,7 +30,9 @@ var CONFIGSTORE = path.join(os.homedir(), ".config", "configstore", "firebase-to
 var DOC = "https://firestore.googleapis.com/v1/projects/" + PROJECT +
   "/databases/(default)/documents/users/" + UID;
 
-if (!UID) { console.error("FAILED: set PROTAG_UID (the app account's Firebase Auth uid)"); process.exit(2); }
+// lazy guard: don't hard-exit at require time (that crashed any consumer importing this as a library);
+// only the user-doc helpers actually need PROTAG_UID, so they check on use.
+function requireUid() { if (!UID) throw new Error("PROTAG_UID not set (the app account's Firebase Auth uid)"); }
 
 // ---- auth: mint a fresh access token from the CLI's stored refresh token ----
 async function accessToken() {
@@ -70,6 +72,7 @@ function fromValue(val) {
   return null;
 }
 async function getDoc(token) {
+  requireUid();
   var r = await fetch(DOC, { headers: { Authorization: "Bearer " + token } });
   if (r.status === 404) return null;
   if (!r.ok) throw new Error("Firestore read failed " + r.status + ": " + (await r.text()));
@@ -78,6 +81,7 @@ async function getDoc(token) {
   return o;
 }
 async function setDoc(token, obj) {
+  requireUid();
   var fields = {}; Object.keys(obj).forEach(function (k) { fields[k] = toValue(obj[k]); });
   var r = await fetch(DOC, {
     method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
@@ -86,23 +90,57 @@ async function setDoc(token, obj) {
   if (!r.ok) throw new Error("Firestore write failed " + r.status + ": " + (await r.text()));
 }
 
+// read the user doc WITH its Firestore updateTime (for optimistic concurrency)
+async function getDocMeta(token) {
+  requireUid();
+  var r = await fetch(DOC, { headers: { Authorization: "Bearer " + token } });
+  if (r.status === 404) return { data: null, updateTime: null };
+  if (!r.ok) throw new Error("Firestore read failed " + r.status + ": " + (await r.text()));
+  var j = await r.json(), f = j.fields || {}, o = {};
+  Object.keys(f).forEach(function (k) { o[k] = fromValue(f[k]); });
+  return { data: o, updateTime: j.updateTime || null };
+}
+// write the user doc ONLY if it hasn't changed since we read it (precondition). Returns false on a
+// concurrent-write conflict (so the caller can re-read + retry) instead of blindly clobbering.
+async function setDocGuarded(token, obj, updateTime) {
+  requireUid();
+  var fields = {}; Object.keys(obj).forEach(function (k) { fields[k] = toValue(obj[k]); });
+  var url = DOC + (updateTime ? "?currentDocument.updateTime=" + encodeURIComponent(updateTime) : "?currentDocument.exists=false");
+  var r = await fetch(url, { method: "PATCH", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify({ fields: fields }) });
+  if (r.ok) return true;
+  var t = await r.text();
+  if ((r.status === 409 || r.status === 412 || r.status === 400) && /precondition|failed|exist|conflict/i.test(t)) return false; // lost the race -> retry
+  throw new Error("Firestore write failed " + r.status + ": " + t);
+}
+// concurrency-safe read -> ingest -> write. ingestFn(state) returns the engine ingest result {state,...}.
+// On a concurrent write it re-reads and re-ingests (ingest is idempotent/deduped, so retry is safe).
+async function commitIngest(token, ingestFn) {
+  var lastErr;
+  for (var attempt = 0; attempt < 5; attempt++) {
+    var meta = await getDocMeta(token);
+    var state = E.init(meta.data ? JSON.stringify(meta.data) : null, new Date()).state;
+    var r = ingestFn(state);
+    try { if (await setDocGuarded(token, r.state, meta.updateTime)) return r; }
+    catch (e) { lastErr = e; }
+    await new Promise(function (res) { setTimeout(res, 300 * (attempt + 1)); }); // concurrent write — back off and retry
+  }
+  throw new Error("Firestore write lost the concurrency race after 5 tries" + (lastErr ? " (" + lastErr.message + ")" : ""));
+}
+
 async function main() {
   var whoopPath = process.argv[2] || path.join(__dirname, "whoop-today.json");
   var whoop = JSON.parse(fs.readFileSync(whoopPath, "utf8"));
   var days = whoop.days || (Array.isArray(whoop) ? whoop : [whoop]);
 
   var token = await accessToken();
-  var current = await getDoc(token);
-  var state = E.init(current ? JSON.stringify(current) : null, new Date()).state;
-  var r = E.ingestWhoopDays(state, days, new Date());
-  await setDoc(token, r.state);
+  var r = await commitIngest(token, function (state) { return E.ingestWhoopDays(state, days, new Date()); });
 
   var v = r.state.whoop || {};
   console.log("pushed " + r.credited.length + " WHOOP activit" + (r.credited.length === 1 ? "y" : "ies") +
     " to users/" + UID + "  (recovery " + v.recovery + "% " + v.zone + ", sleep " + v.sleepHours + "h, strain " + v.strain + ")");
 }
 
-module.exports = { toValue: toValue, fromValue: fromValue, getDoc: getDoc, setDoc: setDoc, accessToken: accessToken };
+module.exports = { toValue: toValue, fromValue: fromValue, getDoc: getDoc, setDoc: setDoc, accessToken: accessToken, getDocMeta: getDocMeta, setDocGuarded: setDocGuarded, commitIngest: commitIngest };
 
 if (require.main === module) {
   main().catch(function (e) { console.error("FAILED: " + ((e && e.message) || e)); process.exit(1); });

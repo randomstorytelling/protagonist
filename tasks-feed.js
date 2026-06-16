@@ -51,11 +51,9 @@ async function gapi(token, url) {
   if (!acts.length) { console.log("no completed Google Tasks in the last " + DAYS + "d"); return; }
 
   var fbTok = await FB.accessToken();
-  var current = await FB.getDoc(fbTok);
-  var state = E.init(current ? JSON.stringify(current) : null, new Date()).state;
-  var r = E.ingestExternal(state, acts, new Date());
+  // concurrency-safe read->ingest->write (precondition + retry), so a simultaneous app write isn't clobbered
+  var r = await FB.commitIngest(fbTok, function (state) { return E.ingestExternal(state, acts, new Date()); });
   if (!r.credited.length) { console.log("found " + acts.length + " completed task(s); all already credited (deduped)"); return; }
-  await FB.setDoc(fbTok, r.state);
   console.log("credited " + r.credited.length + " of " + acts.length + " completed Google Task(s) to Firestore:");
   r.credited.forEach(function (c) { console.log("  +" + c.xp + " " + c.dim + "  \"" + (c.name || "") + "\""); });
 })().catch(function (e) { console.error("FAILED: " + ((e && e.message) || e)); process.exit(1); });

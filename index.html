@@ -421,7 +421,7 @@
     if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
     if(user){
       b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in");
-      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")) FB.auth.signOut(); };
+      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")){ cloudReady=false; clearTimeout(fbWriteTimer); if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub=null; } fbDoc=null; FB.auth.signOut(); } };  // tear down synchronously so no queued push fires mid-signout
     } else {
       b.textContent = "☁ sign in with Google to sync";
       b.onclick = startGoogleSignIn;

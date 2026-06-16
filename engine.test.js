@@ -824,6 +824,13 @@ test("mergeStates: a reset (higher epoch) wins wholesale and is NOT undone by th
   assert(E.mergeStates(big, reset, D(0)).epoch === 1, "higher epoch carried forward");
 });
 
+test("streak.current resets to 0 after a missed day (not stale), but stays live through today", function () {
+  var s = E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state;       // active on day 0 only
+  eq(E.init(JSON.stringify(s), D(3)).state.streak.current, 0, "3 days later with a gap -> streak broken (0)");
+  var s2 = E.applyRep(E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state, "phys_incline", D(1)).state; // day0+day1
+  assert(E.init(JSON.stringify(s2), D(1)).state.streak.current >= 2, "consecutive days reaching today stay live");
+});
+
 test("mergeStates penalty clears if EITHER device recovered; finite-guards garbage", function () {
   var pen = E.newState("L", D(0)); pen.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
   assert(!E.mergeStates(pen, E.newState("L", D(0)), D(0)).penalty.active, "penalty cleared when one device is clear");

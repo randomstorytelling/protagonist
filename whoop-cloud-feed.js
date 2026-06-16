@@ -133,11 +133,8 @@ function shapeDays(cyc, rec, slp, wk) {
   var payload = shapeDays(cyc, rec, slp, wk);
   if (!payload.days.length) { console.log("WHOOP cloud: no days returned"); return; }
 
-  // 4. ingest into the user's game state (deduped, idempotent)
-  var current = await FB.getDoc(ownerTok);
-  var state = E.init(current ? JSON.stringify(current) : null, new Date()).state;
-  var rr = E.ingestWhoopDays(state, payload.days, new Date());
-  await FB.setDoc(ownerTok, rr.state);
+  // 4. ingest into the user's game state (deduped, idempotent) — concurrency-safe (precondition + retry)
+  var rr = await FB.commitIngest(ownerTok, function (state) { return E.ingestWhoopDays(state, payload.days, new Date()); });
   var v = rr.state.whoop || {};
   console.log("WHOOP cloud: pushed " + rr.credited.length + " activit" + (rr.credited.length === 1 ? "y" : "ies") +
     "; latest " + (payload.days[payload.days.length - 1] || {}).date + " recovery " + v.recovery + "% " + v.zone + ", sleep " + v.sleepHours + "h, strain " + v.strain);
