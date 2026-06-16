@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+  // ARCHITECTURE: there is ONE canonical home — the Firebase Hosting domain that EQUALS the Firebase
+  // authDomain. Serving the app there makes app-origin == auth-origin, so the standard Google
+  // signInWithRedirect works everywhere with no cross-domain storage partitioning. Any other host
+  // (the old GitHub Pages URL, or the .web.app alias) bounces here so the app and its auth never split.
+  (function(){
+    var CANON = "protagonist-db3fd.firebaseapp.com";
+    var h = location.hostname;
+    if (h !== CANON && h !== "localhost" && h !== "127.0.0.1") {
+      location.replace("https://" + CANON + "/" + location.hash);
+    }
+  })();
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -294,8 +307,7 @@
 
   <div class="footnote">
     THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
-    <span id="gbtn" style="display:inline-block;vertical-align:middle"></span>
-    <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in to sync</button> · <button class="reset" id="resetBtn">reset save</button>
+    <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in with Google to sync</button> · <button class="reset" id="resetBtn">reset save</button>
   </div>
 
   <div class="scrim" id="scrim"></div>
@@ -311,7 +323,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://accounts.google.com/gsi/client" async></script>
 <script>
   // Cloud sync (real-time, cross-device). Public config — security is enforced by Firestore rules + Auth.
   window.__FB = (function(){
@@ -370,7 +381,7 @@
   function setupCloud(){
     if(!FB){ updateAuthUI(false); return; }
     updateAuthUI(null);
-    completeEmailLinkIfPresent();
+    try{ FB.auth.getRedirectResult().catch(function(){}); }catch(e){}   // complete same-domain redirect sign-in
     FB.auth.onAuthStateChanged(function(user){
       updateAuthUI(user);
       if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
@@ -392,88 +403,24 @@
     });
   }
   function updateAuthUI(user){
-    var b = $("syncBtn"), g = $("gbtn"); if(!b) return;
-    if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; if(g) g.style.display="none"; return; }
+    var b = $("syncBtn"); if(!b) return;
+    if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
     if(user){
-      if(g) g.style.display = "none";
       b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in");
-      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")){ try{ if(gsiReady()) google.accounts.id.disableAutoSelect(); }catch(e){} FB.auth.signOut(); } };
+      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")) FB.auth.signOut(); };
     } else {
-      if(g) g.style.display = "inline-block";
-      renderGoogleButton();                 // primary: first-party Google sign-in
-      b.textContent = " or email link";      // fallback
-      b.onclick = startEmailLinkSignIn;
+      b.textContent = "☁ sign in with Google to sync";
+      b.onclick = startGoogleSignIn;
     }
   }
 
-  // ---- Google sign-in via Google Identity Services (first-party token -> Firebase; avoids the
-  //      cross-domain storage partitioning that breaks signInWithPopup/Redirect on GitHub Pages) ----
-  var GSI_CLIENT_ID = "375980183347-ilmv6npvn5g4rnhneskq4ob1s1nckp6b.apps.googleusercontent.com";
-  var gsiInited = false, gbtnRendered = false, gsiRetry = 0;
-  function gsiReady(){ return !!(window.google && google.accounts && google.accounts.id); }
-  function onGoogleCredential(resp){
-    if(!FB || !resp || !resp.credential) return;
-    try{
-      var cred = firebase.auth.GoogleAuthProvider.credential(resp.credential);
-      FB.auth.signInWithCredential(cred).catch(function(err){
-        try{ alert("Google sign-in couldn't complete: " + ((err&&err.message)||err) + "\nYou can use the email-link option instead."); }catch(e){}
-      });
-    }catch(e){}
-  }
-  function initGsi(){
-    if(gsiInited) return true;
-    if(!gsiReady() || !FB) return false;
-    try{ google.accounts.id.initialize({ client_id: GSI_CLIENT_ID, callback: onGoogleCredential, auto_select: false, cancel_on_tap_outside: true, context: "signin" }); gsiInited = true; }
-    catch(e){ return false; }
-    return true;
-  }
-  function renderGoogleButton(){
-    var g = $("gbtn"); if(!g) return;
-    if(!gsiReady()){ if(gsiRetry++ < 50) setTimeout(renderGoogleButton, 300); return; }   // GSI loads async
-    if(!initGsi()) return;
-    if(gbtnRendered) return;
-    try{ google.accounts.id.renderButton(g, { type:"standard", theme:"filled_black", size:"medium", text:"signin_with", shape:"pill" }); gbtnRendered = true; }catch(e){}
-    try{ google.accounts.id.prompt(); }catch(e){}   // also surface One Tap if available
-  }
-
-  // ---- passwordless email-link sign-in (works cross-device, no shared wifi, no Google popup) ----
-  var EMAIL_KEY = "protag_emailForSignIn";
-  function startEmailLinkSignIn(){
+  // ---- Google sign-in — STANDARD Firebase, same-domain (app is served from the Firebase Hosting
+  //      domain, so app origin == authDomain). No partitioning, no GIS/email-link workarounds.
+  //      Redirect is used (not popup): bulletproof on desktop, mobile Safari, and iOS standalone PWA. ----
+  function startGoogleSignIn(){
     if(!FB) return;
-    var saved = "";
-    try{ saved = localStorage.getItem(EMAIL_KEY) || "lawhitaker21@gmail.com"; }catch(e){}
-    var email = prompt("Enter your email and tap OK.\nWe'll send you a one-tap link that signs you in on THIS device and starts syncing.", saved);
-    if(!email) return;
-    email = email.trim();
-    var b = $("syncBtn");
-    if(b){ b.textContent = "☁ sending link…"; b.onclick = null; }
-    var acs = { url: location.origin + location.pathname, handleCodeInApp: true };
-    FB.auth.sendSignInLinkToEmail(email, acs).then(function(){
-      try{ localStorage.setItem(EMAIL_KEY, email); }catch(e){}
-      if(b){ b.textContent = "☁ check your email"; b.onclick = startEmailLinkSignIn; }
-      try{ alert("Sign-in link sent to " + email + ".\n\nOpen that email on THIS device and tap the link — it'll bring you right back here, signed in and syncing."); }catch(e){}
-    }).catch(function(err){
-      if(b){ b.textContent = "☁ sign in to sync"; b.onclick = startEmailLinkSignIn; }
-      try{ alert("Couldn't send the link: " + ((err && err.message) || err) + "\nDouble-check the email and try again."); }catch(e){}
-    });
-  }
-  function completeEmailLinkIfPresent(){
-    if(!FB) return false;
-    var isLink = false;
-    try{ isLink = FB.auth.isSignInWithEmailLink(location.href); }catch(e){ return false; }
-    if(!isLink) return false;
-    var email = "";
-    try{ email = localStorage.getItem(EMAIL_KEY) || ""; }catch(e){}
-    if(!email){ email = prompt("Confirm the email you requested the sign-in link for:") || ""; }
-    email = email.trim();
-    if(!email) return false;
-    FB.auth.signInWithEmailLink(email, location.href).then(function(){
-      try{ localStorage.removeItem(EMAIL_KEY); }catch(e){}
-      try{ history.replaceState({}, document.title, location.origin + location.pathname); }catch(e){} // strip link params so a refresh can't re-trigger
-    }).catch(function(err){
-      try{ alert("That sign-in link didn't go through: " + ((err && err.message) || err) + "\nTap the sync button to send a fresh one."); }catch(e){}
-    });
-    return true;
+    try{ FB.auth.signInWithRedirect(FB.provider); }
+    catch(e){ try{ FB.auth.signInWithPopup(FB.provider); }catch(_){ try{ alert("Couldn't start Google sign-in: " + ((e&&e.message)||e)); }catch(__){} } }
   }
 
   function apply(fn){
