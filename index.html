@@ -381,7 +381,10 @@
   function setupCloud(){
     if(!FB){ updateAuthUI(false); return; }
     updateAuthUI(null);
-    try{ FB.auth.getRedirectResult().catch(function(){}); }catch(e){}   // complete same-domain redirect sign-in
+    try{ FB.auth.getRedirectResult().catch(function(err){   // complete same-domain redirect sign-in
+      if(err && err.code){ try{ console.warn("sign-in didn't complete:", err.code, err.message); }catch(_){}
+        try{ var b=$("syncBtn"); if(b && !FB.auth.currentUser){ b.textContent="☁ sign-in failed — tap to retry"; } }catch(_){} }
+    }); }catch(e){}
     FB.auth.onAuthStateChanged(function(user){
       updateAuthUI(user);
       if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
@@ -750,7 +753,7 @@
 
   $("getRep").onclick = openSheet;
   $("scrim").onclick = closeSheet;
-  $("resetBtn").onclick = function(){ if(confirm("Reset the System? This wipes all progress.")){ st = G.newState("Lawrence Whitaker", now()); save(); render(); } };
+  $("resetBtn").onclick = function(){ if(confirm("Reset the System? This wipes all progress.")){ var fresh = G.newState("Lawrence Whitaker", now()); fresh.epoch = (st && st.epoch ? st.epoch : 0) + 1; st = fresh; save(); render(); } };  // bump epoch so the reset wins the cloud merge (doesn't get undone)
 
   // day rolled over while the app was open -> reconcile so penalties/streaks update (not just the UI)
   function reconcileNow(){

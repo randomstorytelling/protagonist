@@ -783,6 +783,47 @@ test("mergeStates unions WHOOP credit + dedup set across devices (no re-credit a
   eq(E.ingestWhoopDays(m, [{ date: "2026-06-15", recovery: { score: 60 }, workouts: [{ id: "wa", durationMin: 40 }] }], D(0)).credited.length, 0, "merged dedup set still blocks double-credit");
 });
 
+test("mergeStates: same-day SAME-dimension reps on two devices are NOT destroyed (CRDT, not max)", function () {
+  var base = E.newState("L", D(0));
+  var a = base; ["phys_pushups", "phys_incline", "phys_mobility"].forEach(function (r) { a = E.applyRep(a, r, D(0)).state; }); // 3 physical
+  var b = base; ["phys_creatine", "phys_sixpack"].forEach(function (r) { b = E.applyRep(b, r, D(0)).state; });                // 2 DIFFERENT physical
+  var m = E.mergeStates(a, b, D(0));
+  var day = String(E.dayIndex(D(0)));
+  eq(m.history[day].physical, 5, "all 5 distinct physical reps counted (old bug: max(3,2)=3)");
+  eq(m.totalXp, a.totalXp + b.totalXp, "totalXp is the SUM of both devices' divergent reps, not the max");
+  eq(m.dims.physical, a.dims.physical + b.dims.physical, "dims.physical summed, not maxed");
+});
+
+test("mergeStates: collision merge is idempotent (no growth on re-merge)", function () {
+  var a = E.applyRep(E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state, "phys_incline", D(0)).state;
+  var b = E.applyRep(E.applyRep(E.newState("L", D(0)), "phys_creatine", D(0)).state, "phys_mobility", D(0)).state;
+  var m1 = E.mergeStates(a, b, D(0));
+  eq(progressOf(E.mergeStates(m1, a, D(0))), progressOf(m1), "re-merging a subset doesn't inflate totals");
+  eq(progressOf(E.mergeStates(m1, m1, D(0))), progressOf(m1), "merge(m,m) == m even with collisions");
+});
+
+test("mergeStates: stat points are CONSERVED, not fabricated, across divergent allocation", function () {
+  function alloc(s, d) { var r = E.allocateStat(s, d, D(0)); return (r && r.state) ? r.state : (r || s); }
+  var base = E.newState("L", D(0));
+  for (var i = 0; i < 12; i++) base = E.applyRep(base, "fin_close", D(0)).state; // earn XP -> levels -> stat points
+  var earned = Math.max(0, (E.levelFromXp(base.totalXp).level - 1) * 3);
+  assert(earned >= 2, "test needs >=2 earned points, got " + earned);
+  var a = base, b = base;
+  for (var x = 0; x < earned; x++) { a = alloc(a, "financial"); b = alloc(b, "physical"); } // diverge: A->financial, B->physical
+  var m = E.mergeStates(a, b, D(0));
+  var DIMS = ["physical", "mental", "spiritual", "family", "social", "financial"];
+  var sum = DIMS.reduce(function (t, d) { return t + m.statPoints.allocated[d]; }, 0);
+  eq(m.statPoints.available + sum, earned, "available + sum(allocated) == earned (old bug: maxed to 2x earned)");
+});
+
+test("mergeStates: a reset (higher epoch) wins wholesale and is NOT undone by the merge", function () {
+  var big = E.applyRep(E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state, "fin_close", D(0)).state; // epoch 0, has progress
+  var reset = E.newState("L", D(0)); reset.epoch = (big.epoch || 0) + 1;                                        // user reset -> epoch 1, empty
+  assert(E.mergeStates(big, reset, D(0)).totalXp === 0, "reset wins (progress wiped, deliberate)");
+  assert(E.mergeStates(reset, big, D(0)).totalXp === 0, "order-independent: reset still wins");
+  assert(E.mergeStates(big, reset, D(0)).epoch === 1, "higher epoch carried forward");
+});
+
 test("mergeStates penalty clears if EITHER device recovered; finite-guards garbage", function () {
   var pen = E.newState("L", D(0)); pen.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
   assert(!E.mergeStates(pen, E.newState("L", D(0)), D(0)).penalty.active, "penalty cleared when one device is clear");

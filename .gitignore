@@ -18,3 +18,6 @@ serve.js
 # misc
 node_modules/
 .DS_Store
+
+# firebase hosting deploy cache (local only)
+.firebase/

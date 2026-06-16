@@ -249,6 +249,7 @@
       daily: { day: today, completed: false },
       penalty: { active: false, sinceDay: null },
       bigWins: 0,
+      epoch: 0,                   // bumped on reset; a higher epoch wins a merge wholesale (reset is a deliberate discontinuity)
       log: [],
       lastActiveDay: today,
       recurring: {},              // recurringId -> lastDoneDay
@@ -301,6 +302,7 @@
       out.penalty.sinceDay = num(s.penalty.sinceDay, null);
     }
     out.bigWins = nonNeg(s.bigWins);
+    out.epoch = Math.floor(nonNeg(s.epoch));   // reset generation counter (preserved, never trusted as non-int)
     if (Array.isArray(s.log)) out.log = s.log.slice(0, 200);
     out.lastActiveDay = Math.min(num(s.lastActiveDay, today), today); // future-dated -> clamp to today
     if (s.recurring && typeof s.recurring === "object") {
@@ -430,31 +432,72 @@
   // edits, races). This makes reconciliation CONFLICT-FREE and MONOTONIC instead: every aggregate takes the
   // max, every set the union, history the per-cell max; streak/daily/penalty are re-derived. Idempotent and
   // order-independent on progress — two devices always converge to the same state, and no rep is ever lost.
+  // aggregate a log (the per-rep ledger) into totals — used by the CRDT merge to reconstruct progress
+  // without double-counting. baseXp drives dims/totalXp; a financial rep's amplified xp drives incomeXp.
+  function logAgg(log) {
+    var a = { total: 0, income: 0, big: 0, dims: emptyDay(), dayDim: {} };
+    (log || []).forEach(function (e) {
+      if (!e || DIMENSIONS.indexOf(e.dim) === -1) return;
+      var bx = num(e.baseXp, num(e.xp, 0));
+      a.total += bx; a.dims[e.dim] += bx;
+      if (e.dim === "financial") a.income += num(e.xp, 0);
+      if (e.big) a.big += 1;
+      var dk = Number(e.day);
+      if (Number.isFinite(dk)) { var key = String(dk); if (!a.dayDim[key]) a.dayDim[key] = emptyDay(); a.dayDim[key][e.dim] += 1; }
+    });
+    return a;
+  }
+
   function mergeStates(aRaw, bRaw, now) {
     now = now || new Date();
     var A = validateRepair(migrateIfNeeded(aRaw, now), now);
     var B = validateRepair(migrateIfNeeded(bRaw, now), now);
-    var out = clone(A);
 
+    // RESET is a deliberate discontinuity, not progress: a higher epoch wins the whole save (no merge), so
+    // "reset save" actually propagates across devices instead of being silently undone by the monotonic union.
+    if (A.epoch !== B.epoch) { var hi = clone(A.epoch > B.epoch ? A : B); recomputeStreak(hi); hi.version = SCHEMA_VERSION; return hi; }
+
+    var out = clone(A);
     out.player.createdDay = Math.min(A.player.createdDay, B.player.createdDay); // earliest birth wins
     if (B.player.name && B.player.name !== "Lawrence" && (!A.player.name || A.player.name === "Lawrence")) out.player.name = B.player.name;
     out.player.initials = initialsOf(out.player.name);
+    out.epoch = A.epoch;
 
-    out.totalXp = Math.max(A.totalXp, B.totalXp);     // XP only ever rises -> max preserves the further device
-    out.incomeXp = Math.max(A.incomeXp, B.incomeXp);
-    out.bigWins = Math.max(A.bigWins, B.bigWins);
-    DIMENSIONS.forEach(function (d) { out.dims[d] = Math.max(A.dims[d], B.dims[d]); });
-    out.statPoints.available = Math.max(A.statPoints.available, B.statPoints.available);
-    DIMENSIONS.forEach(function (d) { out.statPoints.allocated[d] = Math.max(A.statPoints.allocated[d], B.statPoints.allocated[d]); });
+    // log: union deduped by (ts,dim,name,xp), newest-first, capped at 200. Computed FIRST because the
+    // aggregates are reconstructed from it — the log is the per-rep ledger that survives a merge intact.
+    var seenLog = {}, log = [];
+    (A.log || []).concat(B.log || []).forEach(function (e) {
+      if (!e) return; var key = num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0);
+      if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
+    });
+    log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
+    out.log = log.slice(0, 200);
 
-    // history: union of day keys, per-dim MAX count (a day's rep tally only grows)
+    // CRDT-style aggregate merge. Per-cell MAX silently DESTROYS reps when two devices log in the SAME
+    // dimension on the SAME day (the offline-divergence case the merge exists for: max(3,2)=3, not 5).
+    // Instead: divergent reps are RECENT, so they're in the unioned log; older reps are shared (equal on
+    // both). For each aggregate take max( stored-on-either, aged-portion + unioned-log ), where aged-portion
+    // = total minus that device's own log. This restores the divergent reps without double-counting; the
+    // candidate always dominates the old MAX, and the result is idempotent + order-independent.
+    var gA = logAgg(A.log), gB = logAgg(B.log), gU = logAgg(out.log);
+    out.totalXp  = Math.max(A.totalXp,  B.totalXp,  Math.max(0, A.totalXp  - gA.total,  B.totalXp  - gB.total)  + gU.total);
+    out.incomeXp = Math.max(A.incomeXp, B.incomeXp, Math.max(0, A.incomeXp - gA.income, B.incomeXp - gB.income) + gU.income);
+    out.bigWins  = Math.max(A.bigWins,  B.bigWins,  Math.max(0, A.bigWins  - gA.big,    B.bigWins  - gB.big)    + gU.big);
+    DIMENSIONS.forEach(function (d) {
+      out.dims[d] = Math.max(A.dims[d], B.dims[d], Math.max(0, A.dims[d] - gA.dims[d], B.dims[d] - gB.dims[d]) + gU.dims[d]);
+    });
+
+    // history: per day+dim, same reconstruction (recent divergent reps from the unioned log; old shared days agree)
     out.history = {};
     var dayKeys = {};
     for (var ka in A.history) if (Object.prototype.hasOwnProperty.call(A.history, ka)) dayKeys[ka] = 1;
     for (var kb in B.history) if (Object.prototype.hasOwnProperty.call(B.history, kb)) dayKeys[kb] = 1;
     Object.keys(dayKeys).forEach(function (dk) {
       var ha = A.history[dk] || emptyDay(), hb = B.history[dk] || emptyDay(), m = emptyDay();
-      DIMENSIONS.forEach(function (d) { m[d] = Math.max(ha[d] || 0, hb[d] || 0); });
+      var ua = gA.dayDim[dk] || emptyDay(), ub = gB.dayDim[dk] || emptyDay(), uu = gU.dayDim[dk] || emptyDay();
+      DIMENSIONS.forEach(function (d) {
+        m[d] = Math.max(ha[d] || 0, hb[d] || 0, Math.max(0, (ha[d] || 0) - (ua[d] || 0), (hb[d] || 0) - (ub[d] || 0)) + (uu[d] || 0));
+      });
       out.history[dk] = m;
     });
 
@@ -466,6 +509,7 @@
         out.external.seen[sk] = (out.external.seen[sk] === undefined) ? v : Math.min(out.external.seen[sk], v);
       }
     });
+    pruneSeen(out.external.seen);   // keep the dedup set bounded after the union (it was grown unbounded on merge)
 
     // recurring upkeep: most-recent completion per id
     out.recurring = {};
@@ -482,14 +526,16 @@
     out.unlockedTitles = Object.keys(tset);
     out.activeTitle = (A.activeTitle && TITLE_BY_ID[A.activeTitle]) ? A.activeTitle : ((B.activeTitle && TITLE_BY_ID[B.activeTitle]) ? B.activeTitle : null);
 
-    // log: union deduped by (ts,dim,name,xp), newest-first, capped at 200
-    var seenLog = {}, log = [];
-    (A.log || []).concat(B.log || []).forEach(function (e) {
-      if (!e) return; var key = num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0);
-      if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
-    });
-    log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
-    out.log = log.slice(0, 200);
+    // stat points are a CONSERVED pool: earned == available + sum(allocated), earned derived from level.
+    // Maxing available & each allocated[] independently fabricates points (allocate-6-to-financial on A and
+    // 6-to-physical on B -> 12 exist where 6 were earned). Instead keep the allocation from the further-
+    // progressed device, then derive available from the merged earned total so the books always balance.
+    var earned = Math.max(0, (levelFromXp(out.totalXp).level - 1) * CONFIG.statPointsPerLevel);
+    var chosen = (A.totalXp >= B.totalXp ? A : B).statPoints.allocated;
+    var alloc = emptyDay(), allocSum = 0;
+    DIMENSIONS.forEach(function (d) { alloc[d] = Math.max(0, Math.floor(num(chosen[d], 0))); allocSum += alloc[d]; });
+    if (allocSum > earned) { alloc = emptyDay(); allocSum = 0; }   // allocation can't exceed earned -> fall back to all-available
+    out.statPoints = { available: Math.max(0, earned - allocSum), allocated: alloc };
 
     out.lastActiveDay = Math.max(A.lastActiveDay, B.lastActiveDay);
     out.whoop = mergeWhoop(A.whoop, B.whoop);
@@ -534,7 +580,7 @@
     recomputeStreak(s);
 
     var ts = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
-    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, source: rep.source || "manual" });
+    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual" });
     if (s.log.length > 200) s.log.length = 200;
     s.lastActiveDay = today;
 

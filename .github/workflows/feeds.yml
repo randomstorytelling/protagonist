@@ -38,6 +38,7 @@ jobs:
       # WHOOP runs AFTER tasks in the same job (sequential) so the two can't race the users/{uid} write.
       # Its WHOOP token + client creds live in the private Firestore doc _feed/whoop (not in any secret).
       - name: Sync WHOOP -> Firestore
+        if: always()   # WHOOP must still sync even if the Tasks step failed (independent feeds)
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
         run: node whoop-cloud-feed.js
