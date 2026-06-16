@@ -1,0 +1,35 @@
+name: feeds
+# Cloud-always-on live feed: pulls completed Google Tasks and writes them into the user's PRIVATE
+# Firestore game state. Runs in GitHub's cloud (no Mac needed). Credentials come from repo Secrets
+# (never committed). WHOOP stays on the Mac launchd (its token rotates and is managed by the WHOOP MCP).
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min (GitHub best-effort scheduling)
+  workflow_dispatch: {}        # manual trigger (used for testing)
+
+concurrency:
+  group: feeds
+  cancel-in-progress: false
+
+jobs:
+  google-tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Materialize credentials from secrets
+        env:
+          FIREBASE_REFRESH_TOKEN: ${{ secrets.FIREBASE_REFRESH_TOKEN }}
+          GOOGLE_TASKS_CLIENT_JSON: ${{ secrets.GOOGLE_TASKS_CLIENT_JSON }}
+          GOOGLE_TASKS_TOKENS_JSON: ${{ secrets.GOOGLE_TASKS_TOKENS_JSON }}
+        run: |
+          mkdir -p "$HOME/.config/configstore" "$HOME/.config/google-tasks"
+          printf '{"tokens":{"refresh_token":%s}}' "$(node -e 'process.stdout.write(JSON.stringify(process.env.FIREBASE_REFRESH_TOKEN))')" > "$HOME/.config/configstore/firebase-tools.json"
+          printf '%s' "$GOOGLE_TASKS_CLIENT_JSON" > "$HOME/.config/google-tasks/client.json"
+          printf '%s' "$GOOGLE_TASKS_TOKENS_JSON" > "$HOME/.config/google-tasks/tokens.json"
+      - name: Sync completed Google Tasks -> Firestore
+        env:
+          PROTAG_UID: ${{ secrets.PROTAG_UID }}
+        run: node tasks-feed.js 7
