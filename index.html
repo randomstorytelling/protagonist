@@ -389,7 +389,7 @@
     var b = $("syncBtn"); if(!b) return;
     if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
     if(user){ b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in"); b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")) FB.auth.signOut(); }; }
-    else { b.textContent = "☁ sign in with Google to sync"; b.onclick = function(){ try{ FB.auth.signInWithRedirect(FB.provider); }catch(e){ try{ FB.auth.signInWithPopup(FB.provider); }catch(_){} } }; }
+    else { b.textContent = "☁ sign in with Google to sync"; b.onclick = function(){ FB.auth.signInWithPopup(FB.provider).catch(function(){ try{ FB.auth.signInWithRedirect(FB.provider); }catch(_){} }); }; }
   }
 
   function apply(fn){
