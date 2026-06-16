@@ -4,6 +4,11 @@ save.json.bak
 whoop-today.json
 *.tmp
 
+# secrets — Firebase Admin service-account keys (NEVER commit; live in ~/.protagonist/)
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+sa.json
+
 # local-only helpers
 deploy/
 serve.js
