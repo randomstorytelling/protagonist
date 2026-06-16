@@ -357,13 +357,13 @@
   };
   var st, queue = [], showing = false, audioCtx = null;
   var FB = window.__FB || null;
-  var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false;
+  var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false, cloudReady = false;
 
   function now(){ return new Date(); }
   function today(){ return G.dayIndex(now()); }
   function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){ if(!window.__saveWarned){ window.__saveWarned=true; try{ alert("Progress couldn't be saved — device storage may be full or blocked."); }catch(_){} } } }
   function cloudPush(){
-    if(!FB || !fbDoc || fbApplyingRemote) return;
+    if(!FB || !fbDoc || fbApplyingRemote || !cloudReady) return;  // never overwrite the cloud until we've reconciled with the SERVER copy
     clearTimeout(fbWriteTimer);
     fbWriteTimer = setTimeout(function(){ try{ fbDoc.set(st); }catch(e){} }, 600);
   }
@@ -385,12 +385,22 @@
     FB.auth.onAuthStateChanged(function(user){
       updateAuthUI(user);
       if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
+      cloudReady = false;                                   // must reconcile with the SERVER copy before any push (prevents reset-on-sign-in)
       if(!user){ fbDoc = null; return; }
       fbDoc = FB.db.collection("users").doc(user.uid);
-      fbDocUnsub = fbDoc.onSnapshot(function(snap){
-        if(snap.metadata.hasPendingWrites) return;            // ignore our own write echoing back
-        if(!snap.exists){ try{ fbDoc.set(st); }catch(e){} return; } // first sign-in on this account -> seed from local
-        // MERGE, don't replace: union local + cloud so neither device's progress is lost (conflict-free, monotonic).
+      // includeMetadataChanges: we need the fromCache->server transition so we know when it's safe to write back
+      fbDocUnsub = fbDoc.onSnapshot({ includeMetadataChanges: true }, function(snap){
+        if(snap.metadata.hasPendingWrites) return;          // ignore our own write echoing back
+        if(!snap.exists){
+          // CRITICAL: an empty LOCAL cache reports !exists too. Seeding here would clobber real cloud
+          // data on any fresh device/browser. Only seed when the SERVER confirms the doc is truly absent.
+          if(snap.metadata.fromCache) return;
+          try{ fbDoc.set(st); }catch(e){}                   // genuine first-ever sign-in -> seed from local
+          cloudReady = true;
+          return;
+        }
+        // doc exists -> MERGE, never replace: union local + cloud so neither device's progress is lost
+        // (conflict-free, monotonic). Safe on both cache and server snapshots.
         var prevSt = JSON.stringify(st);
         var rr = G.init(JSON.stringify(G.mergeStates(st, snap.data(), now())), now());
         fbApplyingRemote = true;
@@ -398,7 +408,8 @@
         fbApplyingRemote = false;
         replayPendingWhoop();   // re-credit any WHOOP synced before cloud was ready (idempotent; merge already preserves most)
         enqueue(rr.events);
-        if(JSON.stringify(st) !== prevSt) cloudPush();  // converge: push the merged result so the other device adopts it too
+        if(!snap.metadata.fromCache) cloudReady = true;     // reconciled with the server -> writes are now safe
+        if(cloudReady && JSON.stringify(st) !== prevSt) cloudPush();  // converge: push the merged result
       }, function(){});
     });
   }
