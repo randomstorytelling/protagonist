@@ -314,10 +314,12 @@
       }
     }
     if (s.whoop && typeof s.whoop === "object") {
+      var wRec = num(s.whoop.recovery, null);
       out.whoop = {
         date: s.whoop.date ? String(s.whoop.date) : null,
-        recovery: num(s.whoop.recovery, null),
-        zone: (["green", "yellow", "red"].indexOf(s.whoop.zone) !== -1) ? s.whoop.zone : "unknown",
+        recovery: wRec,
+        // derive the zone from a valid recovery (keep them consistent); only trust a stored zone if recovery is absent
+        zone: wRec !== null ? recoveryZone(wRec) : ((["green", "yellow", "red"].indexOf(s.whoop.zone) !== -1) ? s.whoop.zone : "unknown"),
         sleepHours: num(s.whoop.sleepHours, null),
         sleepPerf: num(s.whoop.sleepPerf, null),
         strain: num(s.whoop.strain, null),
@@ -579,20 +581,48 @@
     };
   }
 
+  // route an arbitrary WHOOP-ish payload into { days, acts }. Handles {days:[…]}, {activities:[…]},
+  // a single day object, a single pre-shaped activity, and MIXED arrays (partitioned per element so
+  // a heterogeneous batch never silently drops half its entries). Pure; shared by the app + tests.
+  function looksLikeWhoopDay(o) { return !!(o && typeof o === "object" && (o.recovery || o.sleep || o.workouts || o.date)); }
+  function looksLikeActivity(o) { return !!(o && typeof o === "object" && o.kind && o.id != null); }
+  function classifyWhoopPayload(obj) {
+    var days = [], acts = [];
+    function routeOne(o) { if (looksLikeWhoopDay(o)) days.push(o); else if (looksLikeActivity(o)) acts.push(o); }
+    if (Array.isArray(obj)) obj.forEach(routeOne);
+    else if (obj && Array.isArray(obj.days)) days = obj.days;
+    else if (obj && Array.isArray(obj.activities)) acts = obj.activities;
+    else routeOne(obj);
+    return { days: days, acts: acts };
+  }
+
   // ingest one or more WHOOP days AND stamp the latest day's vitals onto state. The single entry point
   // shared by the in-app sync and the whoop-sync.js game-master, so the snapshot can never drift from XP.
+  // Note: recovery/sleep are deduped by date (rec-<date>) — the FIRST sync of a day sets its XP; later
+  // intra-day score corrections refresh the vitals display but don't re-credit (by design: no re-farming).
   function ingestWhoopDays(state, days, now) {
     var list = Array.isArray(days) ? days : [days];
     var acts = [];
     list.forEach(function (d) { acts = acts.concat(whoopDayToActivities(d)); });
     var r = ingestExternal(state, acts, now);
-    var latest = null;
-    list.forEach(function (d) { if (d && d.date && (!latest || String(d.date) > String(latest.date))) latest = d; });
+    // pick the CHRONOLOGICALLY latest day (numeric Y-M-D — "2026-7-9" must lose to "2026-7-10", which a
+    // lexicographic string compare gets backwards). Fall back to last-in-batch only if no date parses.
+    var latest = null, latestIdx = -Infinity;
+    list.forEach(function (d) {
+      if (!d || typeof d !== "object" || !d.date) return;
+      var di = dayIndexFromYMD(d.date);
+      if (Number.isFinite(di) && di >= latestIdx) { latestIdx = di; latest = d; }
+    });
     if (!latest && list.length) latest = list[list.length - 1];
     var v = whoopVitals(latest);
     if (v) {
       v.syncedTs = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
-      r.state.whoop = v; // ingestExternal already returned a fresh clone we own
+      // recency guard: never let an OLDER day's snapshot clobber a fresher one (e.g. a stale auto-fetch
+      // resolving after a fresh deep-link). ingestExternal already returned a fresh clone we own.
+      var prev = r.state.whoop;
+      var prevIdx = (prev && prev.date && Number.isFinite(dayIndexFromYMD(prev.date))) ? dayIndexFromYMD(prev.date) : -Infinity;
+      var curIdx = Number.isFinite(latestIdx) ? latestIdx : Infinity; // no parseable date -> treat as newest
+      if (!prev || curIdx >= prevIdx) r.state.whoop = v;
     }
     return r;
   }
@@ -654,6 +684,7 @@
   // ingest a batch of external activities from ANY source. Idempotent: deduped by dedupKey.
   function ingestExternal(state, activities, now) {
     var s = clone(state);
+    if (!s || typeof s !== "object") s = newState("Lawrence", now); // null/garbage state -> safe default (public-API hardening)
     if (!s.external) s.external = { seen: {} };
     if (!s.external.seen) s.external.seen = {};
     var today = safeToday(now);
@@ -763,6 +794,7 @@
     recurringStatus: recurringStatus,
     ingestExternal: ingestExternal,
     ingestWhoopDays: ingestWhoopDays,
+    classifyWhoopPayload: classifyWhoopPayload,
     whoopActivityToRep: whoopActivityToRep,
     whoopDayToActivities: whoopDayToActivities,
     whoopVitals: whoopVitals,

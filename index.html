@@ -381,6 +381,7 @@
         fbApplyingRemote = true;
         st = rr.state; persistLocal(); render();
         fbApplyingRemote = false;
+        replayPendingWhoop();   // a snapshot replaced st wholesale — re-credit any WHOOP synced before cloud was ready (idempotent)
         enqueue(rr.events);
       }, function(){});
     });
@@ -631,29 +632,31 @@
   //   1) deep link  #wh=<base64 json>   (one tap on the deployed PWA; Claude hands over the link)
   //   2) auto-fetch  whoop-today.json   (silent, when the app is served beside the data file)
   //   3) manual      paste / file       (universal fallback)
-  function looksLikeDay(o){ return !!(o && typeof o==="object" && (o.recovery||o.sleep||o.workouts||o.date)); }
+  // Every payload is remembered in pendingWhoop so a cloud snapshot that lands AFTER we ingest (Firebase
+  // signs in async and replaces st wholesale) can't erase the credit — replayPendingWhoop re-applies them.
+  var pendingWhoop = [];
   function ingestWhoopPayload(obj, srcLabel){
-    var days = null, acts = null;
-    if(Array.isArray(obj)){ if(obj.length && looksLikeDay(obj[0])) days = obj; else acts = obj; }
-    else if(obj && Array.isArray(obj.days)) days = obj.days;
-    else if(obj && Array.isArray(obj.activities)) acts = obj.activities;
-    else if(looksLikeDay(obj)) days = [obj];
-    else acts = [];
-    var r = days ? G.ingestWhoopDays(st, days, now()) : G.ingestExternal(st, acts, now());
-    st = r.state; save(); render();
-    var n = (r.credited && r.credited.length) || 0;
-    // auto-fetch stays silent when nothing is new (no toast on every app open); manual/link always confirm.
-    if(n > 0 || srcLabel !== "auto"){
+    if(srcLabel !== "replay") pendingWhoop.push(obj);
+    var routed = G.classifyWhoopPayload(obj);   // partitions {days:[…]} / {activities:[…]} / single / MIXED arrays
+    var n = 0, events = [];
+    if(routed.days.length){ var rd = G.ingestWhoopDays(st, routed.days, now()); st = rd.state; n += (rd.credited||[]).length; events = events.concat(rd.events); }
+    if(routed.acts.length){ var ra = G.ingestExternal(st, routed.acts, now()); st = ra.state; n += (ra.credited||[]).length; events = events.concat(ra.events); }
+    save(); render();
+    // auto-fetch and replay stay silent when nothing is new (no toast on every app open); manual/link always confirm.
+    if(srcLabel !== "replay" && (n > 0 || srcLabel !== "auto")){
       var rec = (st.whoop && st.whoop.recovery != null) ? ("Recovery "+Math.round(st.whoop.recovery)+"% logged.") : "Your physical baseline is logged.";
       queue.push({ t:"[ WHOOP SYNCED ]", lines:[ n+" activit"+(n===1?"y":"ies")+" counted by the System.", rec ] });
     }
-    enqueue(r.events);
+    enqueue(events);
     return n;
   }
+  // re-apply WHOOP synced before the cloud was ready, after a snapshot replaced st. Idempotent: the
+  // engine's dedup (source:kind:id) re-credits only what the incoming cloud copy was missing.
+  function replayPendingWhoop(){ pendingWhoop.forEach(function(p){ ingestWhoopPayload(p, "replay"); }); }
   function readWhoopHash(){
     try{
       var m = (location.hash||"").match(/[#&]wh=([^&]+)/);
-      if(!m) return null;
+      if(!m || m[1].length > 200000) return null;        // cap the untrusted payload before atob/JSON.parse (avoid main-thread jank)
       var b64 = decodeURIComponent(m[1]).replace(/-/g,"+").replace(/_/g,"/");
       while(b64.length % 4) b64 += "=";
       return JSON.parse(decodeURIComponent(escape(atob(b64))));

@@ -660,6 +660,91 @@ test("REG validateRepair sanitizes a corrupt whoop snapshot (finite-or-null, val
   assert(r.whoop.sleepHours === null && r.whoop.strain === null, "junk numerics -> null");
 });
 
+// --------------------------------------------- WHOOP review hardening (round 2)
+test("REG ingestWhoopDays picks the CHRONOLOGICALLY latest day (not lexicographic)", function () {
+  // "2026-7-9" must lose to "2026-7-12" — a string compare gets this backwards ("9" > "1").
+  var s = E.newState("L", D(0));
+  var r = E.ingestWhoopDays(s, [
+    { date: "2026-7-9", recovery: { score: 40 } },
+    { date: "2026-7-12", recovery: { score: 70 } },
+    { date: "2026-7-10", recovery: { score: 55 } },
+  ], D(0));
+  eq(r.state.whoop.date, "2026-7-12", "newest by calendar, not by string order");
+  eq(r.state.whoop.recovery, 70, "newest day's recovery shown");
+});
+
+test("REG vitals recency guard: an older day cannot clobber a fresher snapshot", function () {
+  var s = E.ingestWhoopDays(E.newState("L", D(0)), [{ date: "2026-06-16", recovery: { score: 66 } }], D(0)).state;
+  var s2 = E.ingestWhoopDays(s, [{ date: "2026-06-15", recovery: { score: 40 } }], D(0)).state;
+  eq(s2.whoop.date, "2026-06-16", "stale older-day sync did NOT overwrite");
+  eq(s2.whoop.recovery, 66, "fresher recovery preserved");
+  var s3 = E.ingestWhoopDays(s2, [{ date: "2026-06-17", recovery: { score: 80 } }], D(0)).state;
+  eq(s3.whoop.date, "2026-06-17", "a genuinely newer day DOES update");
+});
+
+test("ingestWhoopDays edge cases: empty / date-less / single-object", function () {
+  var empty = E.ingestWhoopDays(E.newState("L", D(0)), [], D(0));
+  eq(empty.credited.length, 0, "empty batch credits nothing");
+  assert(empty.state.whoop === null, "empty batch leaves vitals untouched (null)");
+  var dateless = E.ingestWhoopDays(E.newState("L", D(0)), [{ recovery: { score: 55 } }, { recovery: { score: 80 } }], D(0));
+  eq(dateless.state.whoop.recovery, 80, "no parseable date -> falls back to last element");
+  var single = E.ingestWhoopDays(E.newState("L", D(0)), { date: "2026-06-16", recovery: { score: 66 } }, D(0));
+  eq(single.state.whoop.recovery, 66, "non-array single day is wrapped & stamped");
+});
+
+test("REG validateRepair derives whoop zone from a valid recovery (consistency)", function () {
+  var s = E.newState("L", D(0)); s.whoop = { date: "2026-06-16", recovery: 70 }; // valid recovery, NO zone
+  eq(E.validateRepair(s, D(0)).whoop.zone, "green", "zone derived from recovery 70");
+  var s2 = E.newState("L", D(0)); s2.whoop = { date: "d", recovery: 50 }; // missing zone
+  eq(E.validateRepair(s2, D(0)).whoop.zone, "yellow", "zone derived from recovery 50");
+  var s3 = E.newState("L", D(0)); s3.whoop = { date: "d", recovery: "oops", zone: "yellow" }; // bad recovery, valid stored zone
+  var r3 = E.validateRepair(s3, D(0));
+  eq(r3.whoop.recovery, null, "bad recovery -> null"); eq(r3.whoop.zone, "yellow", "falls back to stored zone when recovery absent");
+});
+
+test("REG ingestExternal / ingestWhoopDays tolerate a null state (public-API hardening)", function () {
+  var r = E.ingestWhoopDays(null, [{ date: "2026-06-16", recovery: { score: 72 } }], D(0));
+  assert(Number.isFinite(r.state.dims.physical) && r.state.version === E.SCHEMA_VERSION, "null state -> safe default, no throw");
+  eq(E.ingestExternal(null, [], D(0)).state.version, E.SCHEMA_VERSION, "ingestExternal(null) is safe");
+});
+
+test("classifyWhoopPayload routes every shape (days/activities/single/mixed) without dropping", function () {
+  eq(E.classifyWhoopPayload({ days: [{ date: "d" }] }).days.length, 1, "{days} -> days");
+  eq(E.classifyWhoopPayload({ activities: [{ kind: "workout", id: "w" }] }).acts.length, 1, "{activities} -> acts");
+  eq(E.classifyWhoopPayload({ date: "d", recovery: { score: 1 } }).days.length, 1, "single day object -> days");
+  var single = E.classifyWhoopPayload({ source: "whoop", kind: "workout", id: "w", durationMin: 30 });
+  eq(single.acts.length, 1, "single raw activity routed (NOT silently dropped)"); eq(single.days.length, 0, "...and not a day");
+  var mixed = E.classifyWhoopPayload([{ date: "d", recovery: { score: 1 } }, { kind: "workout", id: "w", durationMin: 30 }]);
+  eq(mixed.days.length, 1, "mixed array partitions days"); eq(mixed.acts.length, 1, "mixed array partitions acts");
+  eq(E.classifyWhoopPayload(null).days.length, 0, "null -> empty"); eq(E.classifyWhoopPayload("garbage").acts.length, 0, "garbage -> empty");
+});
+
+test("WHOOP recovery XP bands + score:0-vs-missing distinction", function () {
+  eq(E.whoopActivityToRep({ kind: "recovery", score: 67 }).xp, 12, "67 -> green 12");
+  eq(E.whoopActivityToRep({ kind: "recovery", score: 66 }).xp, 8, "66 -> yellow 8");
+  eq(E.whoopActivityToRep({ kind: "recovery", score: 34 }).xp, 8, "34 -> yellow 8");
+  eq(E.whoopActivityToRep({ kind: "recovery", score: 33 }).xp, 4, "33 -> red 4");
+  eq(E.whoopActivityToRep({ kind: "recovery", score: 0 }).xp, 4, "0 is a valid red rep, not null");
+  eq(E.whoopActivityToRep({ kind: "recovery" }), null, "missing score -> null");
+});
+
+test("WHOOP workout strain/duration boundaries (floor, cap, crossover)", function () {
+  eq(E.whoopActivityToRep({ kind: "workout", durationMin: 24 }).xp, 8, "24m -> exactly the floor (8)");
+  eq(E.whoopActivityToRep({ kind: "workout", durationMin: 21 }).xp, 8, "21m -> 7 clamped up to 8");
+  eq(E.whoopActivityToRep({ kind: "workout", durationMin: 30, strain: 5 }).xp, 11, "intensity beats duration at the crossover (max(10,11))");
+  eq(E.whoopActivityToRep({ kind: "workout", strain: 3.6 }).xp, 8, "low strain-only -> floored to 8");
+  eq(E.whoopActivityToRep({ kind: "workout", strain: 18.2 }).xp, 40, "max strain -> capped at 40");
+});
+
+test("whoopVitals preserves falsy-but-valid zeros and partial sub-objects", function () {
+  var z = E.whoopVitals({ date: "d", recovery: { score: 0 }, strain: 0 });
+  eq(z.recovery, 0, "recovery 0 kept (not dropped by truthiness)"); eq(z.zone, "red", "0 -> red"); eq(z.strain, 0, "strain 0 kept");
+  var sp = E.whoopVitals({ date: "d", sleep: { performance: 55 } });
+  eq(sp.sleepHours, null, "no hours -> null"); eq(sp.sleepPerf, 55, "perf-only sleep kept");
+  var hr = E.whoopVitals({ date: "d", recovery: { hrv: 90.6, rhr: 48 } });
+  eq(hr.recovery, null, "no score -> null"); eq(hr.zone, "unknown", "no score -> unknown"); eq(hr.hrv, 91, "hrv rounded"); eq(hr.rhr, 48, "rhr kept");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");

@@ -13,6 +13,24 @@ Your life as a System. A bespoke, gamified life-OS — six dimensions (Physical,
 ### Auto-sources (mini-wins, everywhere)
 `externalActivityToRep` in `engine.js` is the single place to register an auto-source. Today: WHOOP (→ Physical), and Amazon MCF orders / IG outreach / Gmail / sales (→ Financial). Adding a new source is one `case`. All ingestion is deduped by a collision-proof key.
 
+### WHOOP sync — three paths, one idempotent engine
+The PWA is static (no backend), and live WHOOP data lives in a Claude session's MCP. The bridge offers three ways in, all routed through the same `ingestWhoopDays` → `ingestExternal` path, so they dedupe against each other and can never double-count:
+
+1. **Deep link** `…/#wh=<base64url JSON>` — one tap on the deployed phone PWA. Claude (with WHOOP MCP) pulls the day and hands over the link; the app decodes, ingests, then self-clears the hash. The phone path, since GitHub Pages never gets the data file.
+2. **Auto-fetch** `whoop-today.json` — on boot the app `fetch()`es the file beside it and ingests silently (no toast unless something new lands). Works when the app is **served alongside the data file** (local / self-host); Claude keeps the file fresh from MCP. Absent on Pages → skipped.
+3. **Manual** paste / file — universal fallback in the "Sync WHOOP" panel.
+
+Workout XP rewards the *better* of duration (`min/3`) or intensity (`strain×2.2`), bounded [8,40]; recovery uses WHOOP's green/yellow/red bands; sleep ≥7h banks a bonus. The latest day's recovery/sleep/strain/HRV/RHR is stamped to `state.whoop` and shown in the **WHOOP Vitals** panel (display only — XP always lives in history). Time is monotonic: a multi-day backfill all credits *today*, never the past.
+
+Day shape (`strain` and sleep `performance` optional):
+```json
+{ "date": "2026-06-16",
+  "recovery": { "score": 66, "hrv": 95, "rhr": 49 },
+  "sleep": { "id": "…", "hours": 7.53, "performance": 81 },
+  "strain": 5.41,
+  "workouts": [ { "id": "…", "sport": "walking", "durationMin": 53, "strain": 5.12 } ] }
+```
+
 ## Develop
 
 ```bash
