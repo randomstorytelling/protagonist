@@ -1,9 +1,10 @@
-# personal / generated data
+# personal / generated data — NEVER publish (biometrics)
 save.json
 save.json.bak
 *.tmp
-# NOTE: whoop-today.json IS published (the live WHOOP feed the app auto-loads). It holds
-# recovery/sleep/strain/workouts — biometrics on a public URL. Tradeoff accepted for zero-tap sync.
+# whoop-today.json holds recovery/sleep/strain — stays PRIVATE. The live feed now writes it
+# straight to per-user Firestore (whoop-feed.js), so it must never sit on a public URL.
+whoop-today.json
 
 # secrets — Firebase Admin service-account keys (NEVER commit; live in ~/.protagonist/)
 *serviceAccount*.json
