@@ -1,22 +1,33 @@
 #!/bin/bash
-# Autonomous WHOOP -> GitHub Pages publisher. Run by launchd (~every 20 min).
-# Pulls live WHOOP, and IF the feed changed, commits + pushes whoop-today.json so the deployed
-# Protagonist app auto-loads fresh recovery/sleep/strain/workouts. Logs to ~/.protagonist/.
+# Live WHOOP feed publisher (run by launchd ~every 20 min) — the autonomous, zero-tap WHOOP feed.
+#
+# IMPORTANT: launchd is sandboxed OUT of iCloud "Mobile Documents" (it gets "Operation not permitted"
+# trying to touch this repo here). So the LIVE copy of this script + a working CLONE live OUTSIDE iCloud:
+#   - script: ~/.protagonist/whoop-sync-push.sh   (what launchd actually runs)
+#   - clone:  ~/.protagonist/feed                 (a git clone of this repo, non-iCloud)
+#   - agent:  ~/Library/LaunchAgents/com.protagonist.whoopfeed.plist  (StartInterval 1200)
+#
+# Install / re-install:
+#   git clone git@github.com:randomstorytelling/protagonist.git ~/.protagonist/feed
+#   cp whoop-sync-push.sh ~/.protagonist/whoop-sync-push.sh && chmod +x ~/.protagonist/whoop-sync-push.sh
+#   launchctl load -w ~/Library/LaunchAgents/com.protagonist.whoopfeed.plist
+# Disable:  launchctl unload ~/Library/LaunchAgents/com.protagonist.whoopfeed.plist
+# Logs:     ~/.protagonist/whoop-sync.log
+#
+# What it does: pull live WHOOP (whoop-pull.js) -> whoop-today.json, and push ONLY when it changed,
+# so GitHub Pages republishes the feed and the app's poller picks it up.
 NODE="/Users/lawrencewhitakeriii/.local/node/bin/node"
-REPO="/Users/lawrencewhitakeriii/Library/Mobile Documents/com~apple~CloudDocs/CLAUDE/Protagonist"
+FEED="$HOME/.protagonist/feed"
 LOG="$HOME/.protagonist/whoop-sync.log"
-mkdir -p "$HOME/.protagonist"
 export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/github_protagonist -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-cd "$REPO" || { echo "[$(date)] cannot cd to repo" >> "$LOG"; exit 1; }
+cd "$FEED" || { echo "[$(date)] no feed clone at $FEED" >> "$LOG"; exit 1; }
 {
   echo "[$(date)] --- run ---"
+  git pull --rebase --autostash origin main || true
   if ! "$NODE" whoop-pull.js; then echo "pull failed"; exit 1; fi
   if git diff --quiet -- whoop-today.json; then echo "no change"; exit 0; fi
-  git pull --rebase --autostash origin main || true        # absorb concurrent commits (other files); feed file rarely conflicts
   git add whoop-today.json
   git -c user.name="whoop-feed" -c user.email="feed@protagonist.local" commit -m "chore(feed): refresh WHOOP $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "nothing to commit"; exit 0; }
-  if ! git push origin main; then                           # retry once after rebasing if origin moved
-    git pull --rebase --autostash origin main && git push origin main
-  fi
+  git push origin main || { git pull --rebase --autostash origin main && git push origin main; }
   echo "pushed refreshed feed"
 } >> "$LOG" 2>&1
