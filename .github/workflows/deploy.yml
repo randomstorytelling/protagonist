@@ -35,10 +35,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble site (app shell only — no personal data)
+      - name: Assemble site (app shell + the live WHOOP feed file)
         run: |
           mkdir -p _site
           cp index.html engine.js manifest.json service-worker.js icon.svg _site/
+          cp whoop-today.json _site/ 2>/dev/null || echo "no whoop-today.json to publish yet"
       - uses: actions/configure-pages@v5
         with:
           enablement: true

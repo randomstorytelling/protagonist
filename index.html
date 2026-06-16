@@ -704,6 +704,11 @@
     var hashData = readWhoopHash();
     if(hashData){ ingestWhoopPayload(hashData, "link"); clearWhoopHash(); }
     fetchLocalWhoop();
+    // keep an open app live: re-pull the published feed periodically + whenever the app regains focus.
+    // (fetch is no-store + ingest is idempotent/deduped, so polling never double-counts or spams toasts.)
+    setInterval(fetchLocalWhoop, 90000);
+    document.addEventListener("visibilitychange", function(){ if(!document.hidden) fetchLocalWhoop(); });
+    window.addEventListener("focus", fetchLocalWhoop);
   }
 
   // manual UI: primary is paste (Claude hands over JSON); file picker is the fallback.
