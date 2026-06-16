@@ -294,6 +294,7 @@
 
   <div class="footnote">
     THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
+    <span id="gbtn" style="display:inline-block;vertical-align:middle"></span>
     <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in to sync</button> · <button class="reset" id="resetBtn">reset save</button>
   </div>
 
@@ -310,6 +311,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <script>
   // Cloud sync (real-time, cross-device). Public config — security is enforced by Firestore rules + Auth.
   window.__FB = (function(){
@@ -390,10 +392,48 @@
     });
   }
   function updateAuthUI(user){
-    var b = $("syncBtn"); if(!b) return;
-    if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
-    if(user){ b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in"); b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")) FB.auth.signOut(); }; }
-    else { b.textContent = "☁ sign in to sync"; b.onclick = startEmailLinkSignIn; }
+    var b = $("syncBtn"), g = $("gbtn"); if(!b) return;
+    if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; if(g) g.style.display="none"; return; }
+    if(user){
+      if(g) g.style.display = "none";
+      b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in");
+      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")){ try{ if(gsiReady()) google.accounts.id.disableAutoSelect(); }catch(e){} FB.auth.signOut(); } };
+    } else {
+      if(g) g.style.display = "inline-block";
+      renderGoogleButton();                 // primary: first-party Google sign-in
+      b.textContent = " or email link";      // fallback
+      b.onclick = startEmailLinkSignIn;
+    }
+  }
+
+  // ---- Google sign-in via Google Identity Services (first-party token -> Firebase; avoids the
+  //      cross-domain storage partitioning that breaks signInWithPopup/Redirect on GitHub Pages) ----
+  var GSI_CLIENT_ID = "375980183347-ilmv6npvn5g4rnhneskq4ob1s1nckp6b.apps.googleusercontent.com";
+  var gsiInited = false, gbtnRendered = false, gsiRetry = 0;
+  function gsiReady(){ return !!(window.google && google.accounts && google.accounts.id); }
+  function onGoogleCredential(resp){
+    if(!FB || !resp || !resp.credential) return;
+    try{
+      var cred = firebase.auth.GoogleAuthProvider.credential(resp.credential);
+      FB.auth.signInWithCredential(cred).catch(function(err){
+        try{ alert("Google sign-in couldn't complete: " + ((err&&err.message)||err) + "\nYou can use the email-link option instead."); }catch(e){}
+      });
+    }catch(e){}
+  }
+  function initGsi(){
+    if(gsiInited) return true;
+    if(!gsiReady() || !FB) return false;
+    try{ google.accounts.id.initialize({ client_id: GSI_CLIENT_ID, callback: onGoogleCredential, auto_select: false, cancel_on_tap_outside: true, context: "signin" }); gsiInited = true; }
+    catch(e){ return false; }
+    return true;
+  }
+  function renderGoogleButton(){
+    var g = $("gbtn"); if(!g) return;
+    if(!gsiReady()){ if(gsiRetry++ < 50) setTimeout(renderGoogleButton, 300); return; }   // GSI loads async
+    if(!initGsi()) return;
+    if(gbtnRendered) return;
+    try{ google.accounts.id.renderButton(g, { type:"standard", theme:"filled_black", size:"medium", text:"signin_with", shape:"pill" }); gbtnRendered = true; }catch(e){}
+    try{ google.accounts.id.prompt(); }catch(e){}   // also surface One Tap if available
   }
 
   // ---- passwordless email-link sign-in (works cross-device, no shared wifi, no Google popup) ----

@@ -28,9 +28,12 @@ if (!saPath || !whoopPath) {
   process.exit(2);
 }
 
-var admin;
-try { admin = require("firebase-admin"); }
-catch (e) { console.error("missing dependency: run `npm install firebase-admin` in this folder first."); process.exit(1); }
+var fbApp, fbFs, fbAuth;
+try {
+  fbApp = require("firebase-admin/app");        // modular API (firebase-admin v13)
+  fbFs = require("firebase-admin/firestore");
+  fbAuth = require("firebase-admin/auth");
+} catch (e) { console.error("missing dependency: run `npm install firebase-admin` in this folder first."); process.exit(1); }
 
 var sa, whoop;
 try { sa = require(require("path").resolve(saPath)); }
@@ -40,11 +43,11 @@ catch (e) { console.error("can't read WHOOP json at " + whoopPath + ": " + e.mes
 
 var days = whoop.days || (Array.isArray(whoop) ? whoop : [whoop]);
 
-admin.initializeApp({ credential: admin.credential.cert(sa) });
-var db = admin.firestore();
+fbApp.initializeApp({ credential: fbApp.cert(sa) });
+var db = fbFs.getFirestore();
 
 (async function () {
-  var user = await admin.auth().getUserByEmail(email);          // resolve uid from email — no id to paste
+  var user = await fbAuth.getAuth().getUserByEmail(email);       // resolve uid from email — no id to paste
   var ref = db.collection("users").doc(user.uid);
   var snap = await ref.get();
   var current = snap.exists ? snap.data() : null;
