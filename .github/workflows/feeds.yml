@@ -19,16 +19,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Materialize credentials from secrets
+      - name: Materialize credentials from the single FEED_CREDS secret
         env:
-          FIREBASE_REFRESH_TOKEN: ${{ secrets.FIREBASE_REFRESH_TOKEN }}
-          GOOGLE_TASKS_CLIENT_JSON: ${{ secrets.GOOGLE_TASKS_CLIENT_JSON }}
-          GOOGLE_TASKS_TOKENS_JSON: ${{ secrets.GOOGLE_TASKS_TOKENS_JSON }}
+          FEED_CREDS: ${{ secrets.FEED_CREDS }}
         run: |
           mkdir -p "$HOME/.config/configstore" "$HOME/.config/google-tasks"
-          printf '{"tokens":{"refresh_token":%s}}' "$(node -e 'process.stdout.write(JSON.stringify(process.env.FIREBASE_REFRESH_TOKEN))')" > "$HOME/.config/configstore/firebase-tools.json"
-          printf '%s' "$GOOGLE_TASKS_CLIENT_JSON" > "$HOME/.config/google-tasks/client.json"
-          printf '%s' "$GOOGLE_TASKS_TOKENS_JSON" > "$HOME/.config/google-tasks/tokens.json"
+          node -e '
+            const c = JSON.parse(process.env.FEED_CREDS);
+            const fs = require("fs"), os = require("os"), p = require("path"), d = os.homedir();
+            fs.writeFileSync(p.join(d, ".config/configstore/firebase-tools.json"), JSON.stringify({ tokens: { refresh_token: c.firebase_refresh_token } }));
+            fs.writeFileSync(p.join(d, ".config/google-tasks/client.json"), JSON.stringify(c.google_tasks_client));
+            fs.writeFileSync(p.join(d, ".config/google-tasks/tokens.json"), JSON.stringify(c.google_tasks_tokens));
+          '
       - name: Sync completed Google Tasks -> Firestore
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
