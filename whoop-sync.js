@@ -14,14 +14,9 @@ var E = require("./engine.js");
 function syncDays(saveRaw, whoopDays, now) {
   now = now || new Date();
   var state = E.init(saveRaw, now).state;
-  var credited = [], events = [];
-  (Array.isArray(whoopDays) ? whoopDays : [whoopDays]).forEach(function (day) {
-    var r = E.ingestExternal(state, E.whoopDayToActivities(day), now);
-    state = r.state;
-    credited = credited.concat(r.credited);
-    events = events.concat(r.events);
-  });
-  return { save: state, credited: credited, events: events };
+  // ingestWhoopDays = shape -> ingest (idempotent, deduped) -> stamp latest vitals. Same path the app uses.
+  var r = E.ingestWhoopDays(state, Array.isArray(whoopDays) ? whoopDays : [whoopDays], now);
+  return { save: r.state, credited: r.credited, events: r.events };
 }
 
 module.exports = { syncDays: syncDays };
@@ -49,14 +44,15 @@ if (require.main === module) {
   out.credited.forEach(function (c) { console.log("  +" + c.xp + "  " + c.name); });
 }
 
-/* Example whoop.json (one day):
+/* Example whoop.json (one day). `strain` (0-21) and sleep `performance` are optional:
 {
   "date": "2026-06-15",
-  "recovery": { "score": 72 },
-  "sleep": { "id": "sleep-abc", "hours": 7.6 },
+  "recovery": { "score": 72, "hrv": 90, "rhr": 47 },
+  "sleep": { "id": "sleep-abc", "hours": 7.6, "performance": 81 },
+  "strain": 14.9,
   "workouts": [
-    { "id": "wk-123", "sport": "running", "durationMin": 42 },
-    { "id": "wk-124", "sport": "weightlifting", "durationMin": 35 }
+    { "id": "wk-123", "sport": "running", "durationMin": 42, "strain": 11.2 },
+    { "id": "wk-124", "sport": "weightlifting", "durationMin": 35, "strain": 8.4 }
   ]
 }
 Or multiple days: { "days": [ {…}, {…} ] }

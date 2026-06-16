@@ -150,9 +150,29 @@
   .logitbtn{margin-top:10px;width:100%;font-family:var(--mono);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;padding:10px;border:1px solid var(--cyan);border-radius:5px;background:rgba(46,125,255,0.12);color:var(--cyan);cursor:pointer;}
   .logitbtn:active{background:rgba(46,125,255,0.26);}
   .whooprow{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(95,224,255,0.08);}
-  .whoopbtn{font-family:var(--mono);font-size:12px;letter-spacing:0.04em;padding:8px 12px;border:1px solid var(--line);border-radius:5px;background:rgba(46,125,255,0.10);color:var(--cyan);cursor:pointer;}
+  .whoopbtn{font-family:var(--mono);font-size:12px;letter-spacing:0.04em;padding:8px 12px;border:1px solid var(--line);border-radius:5px;background:rgba(46,125,255,0.10);color:var(--cyan);cursor:pointer;white-space:nowrap;}
   .whoopbtn:active{background:rgba(46,125,255,0.24);}
   .whoophint{font-size:11px;color:var(--faint2);}
+  .whooppaste{margin-top:11px;display:none;}
+  .whooppaste textarea{width:100%;min-height:74px;resize:vertical;background:rgba(4,8,16,0.7);border:1px solid var(--line);border-radius:5px;color:var(--txt);font-family:var(--mono);font-size:12px;padding:10px;outline:none;}
+  .whooppaste textarea:focus{border-color:var(--cyan);box-shadow:0 0 12px rgba(95,224,255,0.15);}
+  .whooppaste .row2{display:flex;gap:8px;margin-top:8px;}
+  .whooppaste .row2 .logitbtn{margin-top:0;flex:1;}
+
+  /* WHOOP vitals */
+  .vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px;}
+  .vt{background:rgba(4,8,16,0.6);border:1px solid rgba(95,224,255,0.14);border-radius:6px;padding:9px 6px;text-align:center;}
+  .vt .vv{font-family:var(--mono);font-size:19px;font-weight:700;line-height:1;}
+  .vt .vl{font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-top:5px;}
+  .vt .vs{font-size:9.5px;color:var(--faint2);margin-top:2px;min-height:11px;}
+  .zone-green{color:#3fe0a0;text-shadow:0 0 10px rgba(63,224,160,0.35);}
+  .zone-yellow{color:#ffd76a;text-shadow:0 0 10px rgba(255,215,106,0.30);}
+  .zone-red{color:#ff5469;text-shadow:0 0 10px rgba(255,84,105,0.35);}
+  .zone-cyan{color:var(--cyan);text-shadow:0 0 10px var(--cyan-glow);}
+  .zone-unknown{color:var(--muted);}
+  .whoopcoach{font-size:12px;color:var(--muted);line-height:1.5;margin-top:11px;padding-top:10px;border-top:1px dashed rgba(95,224,255,0.18);}
+  .whoopcoach b{color:var(--txt);}
+  .whoop .meta{color:var(--faint2);}
 
   /* bottom sheet */
   .scrim{position:fixed;inset:0;background:rgba(2,4,9,0.7);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;z-index:40;}
@@ -212,6 +232,12 @@
     </div>
   </div>
 
+  <div class="panel whoop" id="whoopPanel" style="display:none">
+    <div class="ph"><span class="t">⌚ WHOOP Vitals</span><span class="meta" id="whoopAsOf"></span></div>
+    <div class="vitals" id="whoopVitals"></div>
+    <div class="whoopcoach" id="whoopCoach"></div>
+  </div>
+
   <div class="panel smart">
     <div class="ph"><span class="t">Log Anything</span><span class="meta">just say what you did</span></div>
     <div class="smartrow">
@@ -221,8 +247,15 @@
     <div id="actPreview" class="actpreview" style="display:none"></div>
     <div class="whooprow">
       <button id="whoopSync" class="whoopbtn">⌚ Sync WHOOP</button>
-      <span class="whoophint">imports today's WHOOP — recovery, sleep, workouts</span>
+      <span class="whoophint" id="whoopHint">recovery · sleep · workouts</span>
       <input id="whoopFile" type="file" accept="application/json,.json" style="display:none" />
+    </div>
+    <div class="whooppaste" id="whoopPasteWrap">
+      <textarea id="whoopPaste" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder='Paste the WHOOP JSON Claude gave you (or tap the sync link instead)…'></textarea>
+      <div class="row2">
+        <button id="whoopPasteGo" class="logitbtn">▸ Sync pasted data</button>
+        <button id="whoopFileBtn" class="dchip">Pick a file</button>
+      </div>
     </div>
   </div>
 
@@ -261,7 +294,7 @@
 
   <div class="footnote">
     THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
-    <button class="reset" id="resetBtn">reset save</button>
+    <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in with Google to sync</button> · <button class="reset" id="resetBtn">reset save</button>
   </div>
 
   <div class="scrim" id="scrim"></div>
@@ -274,6 +307,27 @@
 
   <div class="notewrap"><div class="note" id="note"><div class="nt" id="noteTitle"></div><div id="noteBody"></div></div></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+  // Cloud sync (real-time, cross-device). Public config — security is enforced by Firestore rules + Auth.
+  window.__FB = (function(){
+    try {
+      firebase.initializeApp({
+        apiKey: "AIzaSyD9sBYhISO_hezmwfp-6IPnIdy4Ce9GeWM",
+        authDomain: "protagonist-db3fd.firebaseapp.com",
+        projectId: "protagonist-db3fd",
+        storageBucket: "protagonist-db3fd.firebasestorage.app",
+        messagingSenderId: "375980183347",
+        appId: "1:375980183347:web:a868ff9c188ae5ee17f846"
+      });
+      var db = firebase.firestore();
+      try { db.enablePersistence({ synchronizeTabs: true }); } catch (e) {}
+      return { auth: firebase.auth(), db: db, provider: new firebase.auth.GoogleAuthProvider() };
+    } catch (e) { return null; }
+  })();
+</script>
 <script src="engine.js"></script>
 <script>
 (function(){
@@ -289,19 +343,53 @@
     financial:{label:"Financial",hex:"#3fe0a0"},
   };
   var st, queue = [], showing = false, audioCtx = null;
+  var FB = window.__FB || null;
+  var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false;
 
   function now(){ return new Date(); }
   function today(){ return G.dayIndex(now()); }
-  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){ if(!window.__saveWarned){ window.__saveWarned=true; try{ alert("Progress couldn't be saved — device storage may be full or blocked."); }catch(_){} } } }
+  function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){ if(!window.__saveWarned){ window.__saveWarned=true; try{ alert("Progress couldn't be saved — device storage may be full or blocked."); }catch(_){} } } }
+  function cloudPush(){
+    if(!FB || !fbDoc || fbApplyingRemote) return;
+    clearTimeout(fbWriteTimer);
+    fbWriteTimer = setTimeout(function(){ try{ fbDoc.set(st); }catch(e){} }, 600);
+  }
+  function save(){ persistLocal(); cloudPush(); }
   function $(id){ return document.getElementById(id); }
 
   function boot(){
     var raw = localStorage.getItem(KEY);
-    if(!raw){ st = G.newState("Lawrence Whitaker", now()); save(); render(); return; }
-    var r = G.init(raw, now());
-    st = r.state; save();
-    render();
-    enqueue(r.events);
+    if(!raw){ st = G.newState("Lawrence Whitaker", now()); persistLocal(); render(); }
+    else { var r = G.init(raw, now()); st = r.state; persistLocal(); render(); enqueue(r.events); }
+    setupCloud();
+  }
+
+  // ---- cloud sync (Firebase: one live state across phone + Mac) ----
+  function setupCloud(){
+    if(!FB){ updateAuthUI(false); return; }
+    updateAuthUI(null);
+    try{ FB.auth.getRedirectResult().catch(function(){}); }catch(e){}
+    FB.auth.onAuthStateChanged(function(user){
+      updateAuthUI(user);
+      if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
+      if(!user){ fbDoc = null; return; }
+      fbDoc = FB.db.collection("users").doc(user.uid);
+      fbDocUnsub = fbDoc.onSnapshot(function(snap){
+        if(snap.metadata.hasPendingWrites) return;            // ignore our own write echoing back
+        if(!snap.exists){ try{ fbDoc.set(st); }catch(e){} return; } // first sign-in on this account -> seed from local
+        var rr = G.init(JSON.stringify(snap.data()), now());  // validate/migrate/reconcile the cloud copy
+        fbApplyingRemote = true;
+        st = rr.state; persistLocal(); render();
+        fbApplyingRemote = false;
+        enqueue(rr.events);
+      }, function(){});
+    });
+  }
+  function updateAuthUI(user){
+    var b = $("syncBtn"); if(!b) return;
+    if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
+    if(user){ b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in"); b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")) FB.auth.signOut(); }; }
+    else { b.textContent = "☁ sign in with Google to sync"; b.onclick = function(){ try{ FB.auth.signInWithRedirect(FB.provider); }catch(e){ try{ FB.auth.signInWithPopup(FB.provider); }catch(_){} } }; }
   }
 
   function apply(fn){
@@ -445,6 +533,38 @@
     var low = G.suggestionDim(st, td);
     var cand = G.repsForDim(low).filter(function(r){return !r.big;}).sort(function(a,b){return a.xp-b.xp;})[0];
     $("suggest").innerHTML = cand ? ('Lagging: <b style="color:'+DIM[low].hex+'">'+DIM[low].label+'</b> — try "<b>'+cand.name+'</b>"') : "";
+
+    renderWhoop();
+  }
+
+  // ---- WHOOP vitals readout ----
+  function zoneCls(z){ return z==="green"?"zone-green":z==="yellow"?"zone-yellow":z==="red"?"zone-red":"zone-unknown"; }
+  function vtile(v,l,cls,sub){ return '<div class="vt"><div class="vv '+cls+'">'+v+'</div><div class="vl">'+l+'</div><div class="vs">'+(sub||"&nbsp;")+'</div></div>'; }
+  function whoopAsOf(w){
+    var p=[];
+    if(w.date) p.push(esc(w.date));
+    if(w.syncedTs){ var m=Math.max(0,Math.round((Date.now()-w.syncedTs)/60000)); p.push(m<1?"just synced":(m<60?(m+"m ago"):(Math.round(m/60)+"h ago"))); }
+    return p.join(" · ");
+  }
+  function whoopCoach(w){
+    if(w.zone==="green") return 'Recovery is <b style="color:#3fe0a0">green</b> — your System is primed. Spend it on a <b>hard rep</b> today.';
+    if(w.zone==="red")   return 'Recovery is <b style="color:#ff5469">low</b>. A walk, mobility, or honest rest still counts as a Physical rep — don\'t force a max effort.';
+    if(w.zone==="yellow")return 'Recovery is <b style="color:#ffd76a">moderate</b>. Train, but keep a little in reserve.';
+    if(w.sleepHours!=null && w.sleepHours<7) return 'Short sleep last night — protect tonight\'s window to bank the 7h+ bonus.';
+    return 'Vitals logged. There\'s always a rep somewhere.';
+  }
+  function renderWhoop(){
+    var w = st.whoop;
+    if(!w || (w.recovery==null && w.sleepHours==null && w.strain==null)){ $("whoopPanel").style.display="none"; return; }
+    $("whoopPanel").style.display="";
+    $("whoopAsOf").textContent = whoopAsOf(w);
+    var t = [];
+    if(w.recovery!=null)   t.push(vtile(Math.round(w.recovery)+"%","Recovery",zoneCls(w.zone), w.hrv!=null?("HRV "+w.hrv):""));
+    if(w.sleepHours!=null)  t.push(vtile(w.sleepHours.toFixed(1)+"h","Sleep", w.sleepHours>=7?"zone-green":"zone-yellow", w.sleepPerf!=null?(w.sleepPerf+"% perf"):""));
+    if(w.strain!=null)      t.push(vtile(w.strain.toFixed(1),"Strain","zone-cyan","day strain"));
+    if(w.rhr!=null)         t.push(vtile(String(w.rhr),"RHR","zone-unknown","bpm"));
+    $("whoopVitals").innerHTML = t.join("");
+    $("whoopCoach").innerHTML = whoopCoach(w);
   }
 
   // ---- rep sheet ----
@@ -507,23 +627,71 @@
     }
     enqueue(r.events);
   }
-  // ---- WHOOP sync (file import; same engine path the game-master uses) ----
-  function ingestWhoopPayload(obj){
-    var acts = [];
-    if(Array.isArray(obj)) obj.forEach(function(d){ acts = acts.concat(G.whoopDayToActivities(d)); });
+  // ---- WHOOP sync — three idempotent paths into the SAME engine ingestion ----
+  //   1) deep link  #wh=<base64 json>   (one tap on the deployed PWA; Claude hands over the link)
+  //   2) auto-fetch  whoop-today.json   (silent, when the app is served beside the data file)
+  //   3) manual      paste / file       (universal fallback)
+  function looksLikeDay(o){ return !!(o && typeof o==="object" && (o.recovery||o.sleep||o.workouts||o.date)); }
+  function ingestWhoopPayload(obj, srcLabel){
+    var days = null, acts = null;
+    if(Array.isArray(obj)){ if(obj.length && looksLikeDay(obj[0])) days = obj; else acts = obj; }
+    else if(obj && Array.isArray(obj.days)) days = obj.days;
     else if(obj && Array.isArray(obj.activities)) acts = obj.activities;
-    else if(obj && Array.isArray(obj.days)) obj.days.forEach(function(d){ acts = acts.concat(G.whoopDayToActivities(d)); });
-    else acts = G.whoopDayToActivities(obj);
-    var r = G.ingestExternal(st, acts, now());
+    else if(looksLikeDay(obj)) days = [obj];
+    else acts = [];
+    var r = days ? G.ingestWhoopDays(st, days, now()) : G.ingestExternal(st, acts, now());
     st = r.state; save(); render();
-    queue.push({ t:"[ WHOOP SYNCED ]", lines:[ (r.credited.length||0)+" activities counted by the System.", "Your physical baseline is logged." ] });
+    var n = (r.credited && r.credited.length) || 0;
+    // auto-fetch stays silent when nothing is new (no toast on every app open); manual/link always confirm.
+    if(n > 0 || srcLabel !== "auto"){
+      var rec = (st.whoop && st.whoop.recovery != null) ? ("Recovery "+Math.round(st.whoop.recovery)+"% logged.") : "Your physical baseline is logged.";
+      queue.push({ t:"[ WHOOP SYNCED ]", lines:[ n+" activit"+(n===1?"y":"ies")+" counted by the System.", rec ] });
+    }
     enqueue(r.events);
+    return n;
   }
-  $("whoopSync").onclick = function(){ $("whoopFile").click(); };
+  function readWhoopHash(){
+    try{
+      var m = (location.hash||"").match(/[#&]wh=([^&]+)/);
+      if(!m) return null;
+      var b64 = decodeURIComponent(m[1]).replace(/-/g,"+").replace(/_/g,"/");
+      while(b64.length % 4) b64 += "=";
+      return JSON.parse(decodeURIComponent(escape(atob(b64))));
+    }catch(e){ return null; }
+  }
+  function clearWhoopHash(){ try{ history.replaceState(null,"",location.pathname+location.search); }catch(e){ try{ location.hash=""; }catch(_){} } }
+  function fetchLocalWhoop(){
+    if(location.protocol === "file:") return;          // fetch() of a sibling file is blocked under file://
+    fetch("whoop-today.json", { cache:"no-store" })
+      .then(function(res){ return res.ok ? res.json() : null; })
+      .then(function(obj){ if(obj) ingestWhoopPayload(obj, "auto"); })
+      .catch(function(){});                            // absent (e.g. on GitHub Pages) -> silently skip
+  }
+  function bootWhoopSync(){
+    var hashData = readWhoopHash();
+    if(hashData){ ingestWhoopPayload(hashData, "link"); clearWhoopHash(); }
+    fetchLocalWhoop();
+  }
+
+  // manual UI: primary is paste (Claude hands over JSON); file picker is the fallback.
+  $("whoopSync").onclick = function(){
+    var w = $("whoopPasteWrap");
+    var showing = (w.style.display === "block");
+    w.style.display = showing ? "none" : "block";
+    if(!showing) $("whoopPaste").focus();
+  };
+  $("whoopFileBtn").onclick = function(){ $("whoopFile").click(); };
+  $("whoopPasteGo").onclick = function(){
+    var raw = $("whoopPaste").value.trim();
+    if(!raw) return;
+    var obj; try{ obj = JSON.parse(raw); }catch(e){ alert("That doesn't look like valid WHOOP JSON."); return; }
+    ingestWhoopPayload(obj, "paste");
+    $("whoopPaste").value=""; $("whoopPasteWrap").style.display="none";
+  };
   $("whoopFile").addEventListener("change", function(e){
     var f = e.target.files && e.target.files[0]; if(!f) return;
     var rd = new FileReader();
-    rd.onload = function(){ try{ ingestWhoopPayload(JSON.parse(rd.result)); }catch(err){ alert("Couldn't read that WHOOP file."); } e.target.value=""; };
+    rd.onload = function(){ try{ ingestWhoopPayload(JSON.parse(rd.result), "file"); $("whoopPasteWrap").style.display="none"; }catch(err){ alert("Couldn't read that WHOOP file."); } e.target.value=""; };
     rd.readAsText(f);
   });
 
@@ -546,6 +714,7 @@
   window.addEventListener("focus", reconcileNow);
 
   boot();
+  bootWhoopSync();
 })();
 </script>
 <script>

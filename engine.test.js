@@ -581,6 +581,85 @@ test("completed Google Tasks classify into the right dimension and count as reps
   eq(E.ingestExternal(r.state, acts, D(0)).credited.length, 0, "deduped on re-sync");
 });
 
+// ---------------------------------------------------------------- WHOOP: strain, vitals, day ingestion
+test("REG no-strain workout xp is unchanged (pure duration, back-compat)", function () {
+  eq(E.whoopActivityToRep({ kind: "workout", sport: "walk", durationMin: 60 }).xp, 20, "60m, no strain -> 20");
+  eq(E.whoopActivityToRep({ kind: "workout", sport: "walk", durationMin: 30 }).xp, 10, "30m, no strain -> 10");
+  assert(E.whoopActivityToRep({ kind: "workout", durationMin: 600 }).xp <= 40, "still capped at 40");
+});
+
+test("WHOOP workout xp rewards intensity: a short HARD session beats a short stroll", function () {
+  var hiit = E.whoopActivityToRep({ kind: "workout", sport: "hiit", durationMin: 20, strain: 12 });
+  var stroll = E.whoopActivityToRep({ kind: "workout", sport: "walk", durationMin: 20, strain: 3 });
+  assert(hiit.xp > stroll.xp, "hard 20m (" + hiit.xp + ") > easy 20m (" + stroll.xp + ")");
+  eq(hiit.xp, Math.min(40, Math.round(12 * 2.2)), "strain*2.2 drives the harder one");
+  // a long easy walk and a short hard lift can land at the same bounded value
+  assert(E.whoopActivityToRep({ kind: "workout", durationMin: 5, strain: 20 }).xp === 40, "max strain hits the cap");
+});
+
+test("WHOOP workout scores on strain alone when duration is missing", function () {
+  var r = E.whoopActivityToRep({ kind: "workout", sport: "x", strain: 10 });
+  assert(r && r.xp >= 8, "strain-only workout still scores");
+  eq(E.whoopActivityToRep({ kind: "workout" }), null, "no duration AND no strain -> null (unchanged)");
+});
+
+test("recoveryZone maps WHOOP green/yellow/red bands", function () {
+  eq(E.recoveryZone(67), "green"); eq(E.recoveryZone(99), "green");
+  eq(E.recoveryZone(66), "yellow"); eq(E.recoveryZone(34), "yellow");
+  eq(E.recoveryZone(33), "red"); eq(E.recoveryZone(0), "red");
+  eq(E.recoveryZone(null), "unknown"); eq(E.recoveryZone("oops"), "unknown");
+});
+
+test("whoopVitals distills a day into a finite display snapshot", function () {
+  var v = E.whoopVitals({ date: "2026-06-16", recovery: { score: 66, hrv: 95.2, rhr: 49 }, sleep: { hours: 7.534, performance: 81 }, strain: 5.414 });
+  eq(v.date, "2026-06-16", "date kept");
+  eq(v.recovery, 66, "recovery kept"); eq(v.zone, "yellow", "66 -> yellow");
+  eq(v.sleepHours, 7.53, "sleep rounded to 2dp"); eq(v.sleepPerf, 81, "perf kept");
+  eq(v.strain, 5.4, "strain rounded to 1dp");
+  eq(v.hrv, 95, "hrv rounded"); eq(v.rhr, 49, "rhr kept");
+  eq(E.whoopVitals(null), null, "null day -> null");
+  var partial = E.whoopVitals({ date: "x" });
+  assert(partial.recovery === null && partial.zone === "unknown", "missing recovery -> null/unknown, no crash");
+});
+
+test("ingestWhoopDays credits XP AND stamps the LATEST day's vitals onto state", function () {
+  var s = E.newState("L", D(0));
+  var days = [
+    { date: "2026-06-14", recovery: { score: 40 }, sleep: { hours: 8 }, workouts: [{ id: "a", durationMin: 30, strain: 5 }] },
+    { date: "2026-06-16", recovery: { score: 66, hrv: 95 }, sleep: { hours: 7.5, performance: 81 }, strain: 5.4, workouts: [{ id: "b", durationMin: 50, strain: 5 }] },
+    { date: "2026-06-15", recovery: { score: 62 }, workouts: [{ id: "c", durationMin: 20, strain: 14 }] },
+  ];
+  var r = E.ingestWhoopDays(s, days, D(0));
+  assert(r.state.dims.physical > 0, "physical credited");
+  assert(r.credited.length >= 6, "all scorable activities counted across 3 days");
+  eq(r.state.whoop.date, "2026-06-16", "vitals reflect the most RECENT day, not array order");
+  eq(r.state.whoop.recovery, 66, "latest recovery"); eq(r.state.whoop.zone, "yellow", "zone computed");
+  assert(Number.isFinite(r.state.whoop.syncedTs), "syncedTs stamped");
+});
+
+test("ingestWhoopDays is idempotent and its vitals survive a save round-trip", function () {
+  var s = E.newState("L", D(0));
+  var day = { date: "2026-06-16", recovery: { score: 66 }, sleep: { hours: 7.5 }, strain: 5.4, workouts: [{ id: "w1", durationMin: 50, strain: 5 }] };
+  var r1 = E.ingestWhoopDays(s, [day], D(0));
+  var phys = r1.state.dims.physical;
+  var r2 = E.ingestWhoopDays(r1.state, [day], D(0));
+  eq(r2.state.dims.physical, phys, "no double-count on re-sync");
+  eq(r2.credited.length, 0, "nothing new credited");
+  var back = E.init(JSON.stringify(r2.state), D(0)).state;
+  eq(back.whoop.recovery, 66, "vitals snapshot persisted across reload");
+  eq(back.whoop.zone, "yellow", "zone persisted");
+});
+
+test("REG validateRepair sanitizes a corrupt whoop snapshot (finite-or-null, valid zone)", function () {
+  var s = E.newState("L", D(0));
+  s.whoop = { date: 123, recovery: "oops", zone: "purple", sleepHours: Infinity, sleepPerf: NaN, strain: "x", hrv: null, rhr: "", syncedTs: "no" };
+  var r = E.validateRepair(s, D(0));
+  eq(r.whoop.date, "123", "date coerced to string");
+  eq(r.whoop.recovery, null, "non-finite recovery -> null");
+  eq(r.whoop.zone, "unknown", "invalid zone -> unknown");
+  assert(r.whoop.sleepHours === null && r.whoop.strain === null, "junk numerics -> null");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");

@@ -253,6 +253,7 @@
       lastActiveDay: today,
       recurring: {},              // recurringId -> lastDoneDay
       external: { seen: {} },     // "source:kind:id" -> dayIngested (dedup for WHOOP etc.)
+      whoop: null,                // latest WHOOP vitals snapshot (display only; XP lives in history)
     };
   }
 
@@ -311,6 +312,19 @@
       for (var ek in s.external.seen) if (Object.prototype.hasOwnProperty.call(s.external.seen, ek)) {
         var ev = num(s.external.seen[ek], null); if (ev !== null) out.external.seen[ek] = ev;
       }
+    }
+    if (s.whoop && typeof s.whoop === "object") {
+      out.whoop = {
+        date: s.whoop.date ? String(s.whoop.date) : null,
+        recovery: num(s.whoop.recovery, null),
+        zone: (["green", "yellow", "red"].indexOf(s.whoop.zone) !== -1) ? s.whoop.zone : "unknown",
+        sleepHours: num(s.whoop.sleepHours, null),
+        sleepPerf: num(s.whoop.sleepPerf, null),
+        strain: num(s.whoop.strain, null),
+        hrv: num(s.whoop.hrv, null),
+        rhr: num(s.whoop.rhr, null),
+        syncedTs: num(s.whoop.syncedTs, null),
+      };
     }
     out.version = SCHEMA_VERSION;
     recomputeStreak(out); // streak is always derived, never trusted from disk
@@ -495,9 +509,13 @@
     if (!a || typeof a !== "object") return null;
     if (a.kind === "workout") {
       var mins = num(a.durationMin, num(a.duration_min, 0));
-      if (mins <= 0) return null;
-      var xp = clamp(round(mins / 3), 8, 40);
-      return { id: "whoop_workout", dim: "physical", name: "WHOOP: " + (a.sport || "workout") + " (" + round(mins) + "m)", xp: xp, source: a.source || "whoop" };
+      var strain = nonNeg(a.strain); // WHOOP 0..21 effort; 0 when absent -> pure duration (back-compat)
+      if (mins <= 0 && strain <= 0) return null;
+      // reward EITHER a long session OR a hard one: a 20-min HIIT at strain 12 shouldn't score like
+      // a 20-min stroll. Take the better of duration (min/3) and intensity (strain*2.2), bounded [8,40].
+      var xp = clamp(round(Math.max(mins / 3, strain * 2.2)), 8, 40);
+      var label = "WHOOP: " + (a.sport || "workout") + (mins > 0 ? (" (" + round(mins) + "m)") : "");
+      return { id: "whoop_workout", dim: "physical", name: label, xp: xp, source: a.source || "whoop" };
     }
     if (a.kind === "recovery") {
       var rec = num(a.score, num(a.recovery, -1));
@@ -526,9 +544,57 @@
       acts.push({ source: "whoop", kind: "sleep", id: "sleep-" + (day.sleep.id || d), hours: num(day.sleep.hours, num(day.sleep.durationHours, 0)) });
     }
     if (Array.isArray(day.workouts)) day.workouts.forEach(function (w, i) {
-      acts.push({ source: "whoop", kind: "workout", id: "wk-" + (w.id || (d + "-" + i)), sport: w.sport || "workout", durationMin: num(w.durationMin, num(w.duration_min, 0)) });
+      acts.push({ source: "whoop", kind: "workout", id: "wk-" + (w.id || (d + "-" + i)), sport: w.sport || "workout", durationMin: num(w.durationMin, num(w.duration_min, 0)), strain: nonNeg(w.strain) });
     });
     return acts;
+  }
+
+  // WHOOP recovery zones (the standard green/yellow/red bands): >=67 green, 34-66 yellow, <34 red.
+  function recoveryZone(score) {
+    var s = num(score, -1);
+    if (s < 0) return "unknown";
+    return s >= 67 ? "green" : (s >= 34 ? "yellow" : "red");
+  }
+
+  // distill a WHOOP day into a display-only vitals snapshot (no XP here — that's history's job).
+  function whoopVitals(day) {
+    if (!day || typeof day !== "object") return null;
+    var rec = (day.recovery && (day.recovery.score != null || day.recovery.recovery != null))
+      ? num(day.recovery.score, num(day.recovery.recovery, null)) : null;
+    var sh = (day.sleep && (day.sleep.hours != null || day.sleep.durationHours != null))
+      ? num(day.sleep.hours, num(day.sleep.durationHours, null)) : null;
+    var sp = day.sleep ? num(day.sleep.performance, null) : null;
+    var strain = num(day.strain, null);
+    var hrv = day.recovery ? num(day.recovery.hrv, null) : null;
+    var rhr = day.recovery ? num(day.recovery.rhr, null) : null;
+    return {
+      date: day.date || null,
+      recovery: rec, zone: recoveryZone(rec),
+      sleepHours: sh != null ? +sh.toFixed(2) : null,
+      sleepPerf: sp,
+      strain: strain != null ? +strain.toFixed(1) : null,
+      hrv: hrv != null ? Math.round(hrv) : null,
+      rhr: rhr != null ? Math.round(rhr) : null,
+      syncedTs: null,
+    };
+  }
+
+  // ingest one or more WHOOP days AND stamp the latest day's vitals onto state. The single entry point
+  // shared by the in-app sync and the whoop-sync.js game-master, so the snapshot can never drift from XP.
+  function ingestWhoopDays(state, days, now) {
+    var list = Array.isArray(days) ? days : [days];
+    var acts = [];
+    list.forEach(function (d) { acts = acts.concat(whoopDayToActivities(d)); });
+    var r = ingestExternal(state, acts, now);
+    var latest = null;
+    list.forEach(function (d) { if (d && d.date && (!latest || String(d.date) > String(latest.date))) latest = d; });
+    if (!latest && list.length) latest = list[list.length - 1];
+    var v = whoopVitals(latest);
+    if (v) {
+      v.syncedTs = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
+      r.state.whoop = v; // ingestExternal already returned a fresh clone we own
+    }
+    return r;
   }
 
   // THE single place to register an auto-source. Map an external activity -> a concrete rep.
@@ -696,8 +762,11 @@
     applyRecurring: applyRecurring,
     recurringStatus: recurringStatus,
     ingestExternal: ingestExternal,
+    ingestWhoopDays: ingestWhoopDays,
     whoopActivityToRep: whoopActivityToRep,
     whoopDayToActivities: whoopDayToActivities,
+    whoopVitals: whoopVitals,
+    recoveryZone: recoveryZone,
     externalActivityToRep: externalActivityToRep,
     classifyActivity: classifyActivity,
     logActivity: logActivity,

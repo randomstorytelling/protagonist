@@ -37,5 +37,17 @@ test("syncDays tolerates an empty / partial day", function () {
   assert(Number.isFinite(out.save.dims.physical), "save intact");
 });
 
+test("syncDays stamps the latest day's WHOOP vitals onto the save", function () {
+  var days = [
+    { date: "2026-06-14", recovery: { score: 40 }, sleep: { hours: 8 } },
+    { date: "2026-06-15", recovery: { score: 72, hrv: 95 }, sleep: { hours: 7.5, performance: 80 }, strain: 12.3, workouts: [{ id: "w1", durationMin: 30, strain: 8 }] },
+  ];
+  var out = S.syncDays(null, days, now);
+  assert(out.save.whoop, "vitals snapshot written");
+  eq(out.save.whoop.date, "2026-06-15", "latest day wins");
+  eq(out.save.whoop.recovery, 72, "recovery captured");
+  eq(out.save.whoop.zone, "green", "72 -> green");
+});
+
 console.log("\n  whoop-sync pipeline: " + pass + " passed, " + fail + " failed\n");
 if (fail) { fails.forEach(function (f) { console.log("  FAIL  " + f); }); process.exit(1); } else { console.log("  all green\n"); process.exit(0); }
