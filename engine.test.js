@@ -745,6 +745,53 @@ test("whoopVitals preserves falsy-but-valid zeros and partial sub-objects", func
   eq(hr.recovery, null, "no score -> null"); eq(hr.zone, "unknown", "no score -> unknown"); eq(hr.hrv, 91, "hrv rounded"); eq(hr.rhr, 48, "rhr kept");
 });
 
+// --------------------------------------------- cloud merge (conflict-free, no lost progress)
+function progressOf(s) { return JSON.stringify({ totalXp: s.totalXp, incomeXp: s.incomeXp, dims: s.dims, history: s.history, seen: Object.keys(s.external.seen).sort(), bigWins: s.bigWins }); }
+
+test("mergeStates loses NO progress: reps done on EITHER device survive", function () {
+  var base = E.newState("L", D(0));
+  var a = E.applyRep(E.applyRep(base, "phys_pushups", D(0)).state, "ment_deep", D(0)).state; // device A
+  var b = E.applyRep(E.applyRep(base, "spir_meditate", D(0)).state, "fin_dms", D(0)).state;  // device B (diverged)
+  var m = E.mergeStates(a, b, D(0));
+  var day = String(E.dayIndex(D(0)));
+  assert(m.history[day].physical >= 1 && m.history[day].mental >= 1, "A's reps survived");
+  assert(m.history[day].spiritual >= 1 && m.history[day].financial >= 1, "B's reps survived");
+  assert(m.totalXp >= Math.max(a.totalXp, b.totalXp), "totalXp is at least the further-along device");
+});
+
+test("mergeStates is idempotent and convergent (stable under re-merge)", function () {
+  var a = E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state;
+  var b = E.applyRep(E.newState("L", D(0)), "fin_dms", D(0)).state;
+  var m1 = E.mergeStates(a, b, D(0));
+  eq(progressOf(E.mergeStates(m1, m1, D(0))), progressOf(m1), "merge(m,m) == m");
+  eq(progressOf(E.mergeStates(m1, b, D(0))), progressOf(m1), "re-merging an already-absorbed state is a no-op (converged)");
+});
+
+test("mergeStates is order-independent on progress (commutative)", function () {
+  var a = E.applyRep(E.newState("L", D(0)), "phys_pushups", D(1)).state;
+  var b = E.applyRep(E.newState("L", D(0)), "ment_read", D(2)).state;
+  eq(progressOf(E.mergeStates(a, b, D(2))), progressOf(E.mergeStates(b, a, D(2))), "merge(a,b) progress == merge(b,a)");
+});
+
+test("mergeStates unions WHOOP credit + dedup set across devices (no re-credit after merge)", function () {
+  var a = E.ingestWhoopDays(E.newState("L", D(0)), [{ date: "2026-06-15", recovery: { score: 60 }, workouts: [{ id: "wa", durationMin: 40 }] }], D(0)).state;
+  var b = E.ingestWhoopDays(E.newState("L", D(0)), [{ date: "2026-06-16", recovery: { score: 80 }, workouts: [{ id: "wb", durationMin: 50 }] }], D(0)).state;
+  var m = E.mergeStates(a, b, D(0));
+  assert(m.external.seen["whoop:workout:wk-wa"] !== undefined, "device A's workout kept");
+  assert(m.external.seen["whoop:workout:wk-wb"] !== undefined, "device B's workout kept");
+  eq(m.whoop.date, "2026-06-16", "fresher WHOOP vitals win");
+  eq(E.ingestWhoopDays(m, [{ date: "2026-06-15", recovery: { score: 60 }, workouts: [{ id: "wa", durationMin: 40 }] }], D(0)).credited.length, 0, "merged dedup set still blocks double-credit");
+});
+
+test("mergeStates penalty clears if EITHER device recovered; finite-guards garbage", function () {
+  var pen = E.newState("L", D(0)); pen.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
+  assert(!E.mergeStates(pen, E.newState("L", D(0)), D(0)).penalty.active, "penalty cleared when one device is clear");
+  var pen2 = E.newState("L", D(0)); pen2.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
+  assert(E.mergeStates(pen, pen2, D(0)).penalty.active, "stays penalized only if BOTH are");
+  var m = E.mergeStates({ version: 2, totalXp: NaN, dims: { physical: Infinity } }, E.newState("L", D(0)), D(0));
+  assert(Number.isFinite(m.totalXp) && m.version === E.SCHEMA_VERSION, "garbage input -> finite valid merged state");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");

@@ -415,6 +415,98 @@
     return { state: s, events: events };
   }
 
+  // pick the chronologically fresher of two WHOOP vitals snapshots (then newer syncedTs on a same-day tie).
+  function mergeWhoop(a, b) {
+    if (!a) return b || null;
+    if (!b) return a || null;
+    function idx(w) { return (w && w.date && Number.isFinite(dayIndexFromYMD(w.date))) ? dayIndexFromYMD(w.date) : -Infinity; }
+    var ia = idx(a), ib = idx(b);
+    if (ia !== ib) return ia > ib ? a : b;
+    return num(a.syncedTs, 0) >= num(b.syncedTs, 0) ? a : b;
+  }
+
+  // Merge two saves into one that LOSES NO PROGRESS. The cloud store is last-write-wins at the document
+  // level (cloudPush writes the whole doc), which silently drops reps whenever two devices diverge (offline
+  // edits, races). This makes reconciliation CONFLICT-FREE and MONOTONIC instead: every aggregate takes the
+  // max, every set the union, history the per-cell max; streak/daily/penalty are re-derived. Idempotent and
+  // order-independent on progress — two devices always converge to the same state, and no rep is ever lost.
+  function mergeStates(aRaw, bRaw, now) {
+    now = now || new Date();
+    var A = validateRepair(migrateIfNeeded(aRaw, now), now);
+    var B = validateRepair(migrateIfNeeded(bRaw, now), now);
+    var out = clone(A);
+
+    out.player.createdDay = Math.min(A.player.createdDay, B.player.createdDay); // earliest birth wins
+    if (B.player.name && B.player.name !== "Lawrence" && (!A.player.name || A.player.name === "Lawrence")) out.player.name = B.player.name;
+    out.player.initials = initialsOf(out.player.name);
+
+    out.totalXp = Math.max(A.totalXp, B.totalXp);     // XP only ever rises -> max preserves the further device
+    out.incomeXp = Math.max(A.incomeXp, B.incomeXp);
+    out.bigWins = Math.max(A.bigWins, B.bigWins);
+    DIMENSIONS.forEach(function (d) { out.dims[d] = Math.max(A.dims[d], B.dims[d]); });
+    out.statPoints.available = Math.max(A.statPoints.available, B.statPoints.available);
+    DIMENSIONS.forEach(function (d) { out.statPoints.allocated[d] = Math.max(A.statPoints.allocated[d], B.statPoints.allocated[d]); });
+
+    // history: union of day keys, per-dim MAX count (a day's rep tally only grows)
+    out.history = {};
+    var dayKeys = {};
+    for (var ka in A.history) if (Object.prototype.hasOwnProperty.call(A.history, ka)) dayKeys[ka] = 1;
+    for (var kb in B.history) if (Object.prototype.hasOwnProperty.call(B.history, kb)) dayKeys[kb] = 1;
+    Object.keys(dayKeys).forEach(function (dk) {
+      var ha = A.history[dk] || emptyDay(), hb = B.history[dk] || emptyDay(), m = emptyDay();
+      DIMENSIONS.forEach(function (d) { m[d] = Math.max(ha[d] || 0, hb[d] || 0); });
+      out.history[dk] = m;
+    });
+
+    // dedup set: UNION, keeping the EARLIEST ingested day (so a re-sync after merge can't re-credit)
+    out.external = { seen: {} };
+    [A.external.seen, B.external.seen].forEach(function (src) {
+      for (var sk in src) if (Object.prototype.hasOwnProperty.call(src, sk)) {
+        var v = num(src[sk], null); if (v === null) continue;
+        out.external.seen[sk] = (out.external.seen[sk] === undefined) ? v : Math.min(out.external.seen[sk], v);
+      }
+    });
+
+    // recurring upkeep: most-recent completion per id
+    out.recurring = {};
+    [A.recurring, B.recurring].forEach(function (src) {
+      for (var rk in src) if (Object.prototype.hasOwnProperty.call(src, rk)) {
+        var rv = num(src[rk], null); if (rv === null) continue;
+        out.recurring[rk] = (out.recurring[rk] === undefined) ? rv : Math.max(out.recurring[rk], rv);
+      }
+    });
+
+    // titles: union (valid ids only); keep an active title if either device has one
+    var tset = {};
+    (A.unlockedTitles || []).concat(B.unlockedTitles || []).forEach(function (id) { if (TITLE_BY_ID[id]) tset[id] = 1; });
+    out.unlockedTitles = Object.keys(tset);
+    out.activeTitle = (A.activeTitle && TITLE_BY_ID[A.activeTitle]) ? A.activeTitle : ((B.activeTitle && TITLE_BY_ID[B.activeTitle]) ? B.activeTitle : null);
+
+    // log: union deduped by (ts,dim,name,xp), newest-first, capped at 200
+    var seenLog = {}, log = [];
+    (A.log || []).concat(B.log || []).forEach(function (e) {
+      if (!e) return; var key = num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0);
+      if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
+    });
+    log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
+    out.log = log.slice(0, 200);
+
+    out.lastActiveDay = Math.max(A.lastActiveDay, B.lastActiveDay);
+    out.whoop = mergeWhoop(A.whoop, B.whoop);
+
+    // daily: same day -> completed if EITHER did; else the later day's record
+    if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed) };
+    else out.daily = (A.daily.day > B.daily.day) ? { day: A.daily.day, completed: A.daily.completed } : { day: B.daily.day, completed: B.daily.completed };
+
+    // penalty: cleared if EITHER device cleared it (never re-penalize a device that already recovered)
+    var pActive = !!(A.penalty.active && B.penalty.active);
+    out.penalty = { active: pActive, sinceDay: pActive ? Math.max(num(A.penalty.sinceDay, 0), num(B.penalty.sinceDay, 0)) : null };
+
+    recomputeStreak(out);       // streak is always derived from the merged history
+    out.version = SCHEMA_VERSION;
+    return out;
+  }
+
   // shared crediting path for ALL rep sources (manual, recurring, WHOOP). `rep` is a concrete
   // object {dim, xp, name, id?, big?, source?}. Pure — returns new state + celebration events.
   function _credit(state, rep, now) {
@@ -784,6 +876,7 @@
     TITLES: TITLES,
     newState: newState,
     init: init,
+    mergeStates: mergeStates,
     reconcile: reconcile,
     reconcileTo: reconcileTo,
     validateRepair: validateRepair,
