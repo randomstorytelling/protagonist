@@ -1,15 +1,16 @@
 name: amazon-daily
-# Pulls the single-DAY Vybrance Amazon "Ordered product sales" via SP-API and credits it as a deduped
+# Pulls the just-CLOSED day's Vybrance Amazon "Ordered product sales" via SP-API and credits it as a deduped
 # seed (with XP) into the user's PRIVATE Firestore game state. Runs in GitHub's cloud (no Mac needed).
 # Until SP-API creds are seeded into Firestore _feed/amazon, the job is a GREEN no-op (skips gracefully).
 #
-# Cron is UTC. 04:50 UTC == 11:50 PM CDT (America/Chicago, summer) / 10:50 PM CST (winter). GitHub cron is
-# best-effort; amazon-daily.js attributes to the Central day that is ENDING (now-2h), so a little lag past
-# midnight still credits the correct day. Creds: FEED_CREDS.firebase_refresh_token (owner) + PROTAG_UID;
-# the SP-API refresh_token/client_id/client_secret live in Firestore _feed/amazon (read via the owner token).
+# Cron is UTC. 07:00 UTC == ~1 AM CST / 2 AM CDT (America/Chicago) — i.e. just AFTER the day rolls over, so
+# amazon-daily.js (default = yesterday) pulls a fully-closed 24h day (final figure, never a partial total).
+# GitHub cron is best-effort; a little lag is harmless because the target day is already complete.
+# Creds: FEED_CREDS.firebase_refresh_token (owner) + PROTAG_UID. The SP-API refresh_token/client_id/secret
+# live in Firestore _feed/amazon (read via the owner token) — never in a GitHub secret.
 on:
   schedule:
-    - cron: "50 4 * * *"
+    - cron: "0 7 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -30,11 +31,13 @@ jobs:
         run: |
           mkdir -p "$HOME/.config/configstore"
           node -e '
-            const c = JSON.parse(process.env.FEED_CREDS);
+            let c;
+            try { c = JSON.parse(process.env.FEED_CREDS || ""); }
+            catch (e) { console.error("FEED_CREDS is not valid JSON"); process.exit(1); }   // never echo the secret
             const fs = require("fs"), os = require("os"), p = require("path");
             fs.writeFileSync(p.join(os.homedir(), ".config/configstore/firebase-tools.json"), JSON.stringify({ tokens: { refresh_token: c.firebase_refresh_token } }));
           '
-      - name: Pull Amazon daily sales (SP-API) -> Firestore
+      - name: Pull yesterday's Amazon sales (SP-API) -> Firestore
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
         run: node amazon-daily.js --spapi
