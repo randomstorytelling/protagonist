@@ -883,28 +883,51 @@
     }
     return false;
   }
-  // derived milestone badges (no persisted state — recomputed from the save). progress is 0..1 toward unlock.
+  // derived milestone badges (no persisted state — recomputed from the save). progress 0..1; `saga` = which
+  // universe it's from; `progressText` = "current / target" for the tap-to-see-how detail.
   function achievements(state, now) {
     var s = state || {};
     var reps = repsTotal(s), longest = (s.streak && s.streak.longest) || 0, big = nonNeg(s.bigWins);
     var metDays = (s.hydration && Array.isArray(s.hydration.metDays)) ? s.hydration.metDays.length : 0;
     var sales = recentSalesTotal(s, 7, now), rating = powerRating(s, now), lvl = playerLevel(s);
     var allSix = dayHasAllDims(s);
-    function A(id, name, icon, desc, ok, prog) { return { id: id, name: name, icon: icon, desc: desc, unlocked: !!ok, progress: clamp(prog, 0, 1) }; }
+    function dimLvl(d) { return levelFromXp(nonNeg(s.dims && s.dims[d])).level; }
+    var spirit = dimLvl("spiritual"), social = dimLvl("social");
+    var minDim = DIMENSIONS.reduce(function (m, d) { return Math.min(m, dimLvl(d)); }, Infinity); if (!Number.isFinite(minDim)) minDim = 0;
+    function n(x) { return Math.round(x).toLocaleString(); }
+    function A(id, name, icon, saga, desc, ok, prog, pt) { return { id: id, name: name, icon: icon, saga: saga, desc: desc, unlocked: !!ok, progress: clamp(prog, 0, 1), progressText: pt || "" }; }
     return [
-      A("first", "First Blood", "⚔️", "Log your first rep", reps >= 1, reps / 1),
-      A("ten", "Warming Up", "🔁", "Log 10 reps", reps >= 10, reps / 10),
-      A("century", "Centurion", "💯", "Log 100 reps", reps >= 100, reps / 100),
-      A("hydrate1", "Hydrated", "💧", "Hit your daily water goal", metDays >= 1, metDays / 1),
-      A("hydrate7", "Water Sage", "🌊", "Hit your water goal 7 days", metDays >= 7, metDays / 7),
-      A("allsix", "Renaissance", "🎯", "Train all six dimensions in one day", allSix, allSix ? 1 : 0),
-      A("bigwin", "The Closer", "🏆", "Land your first big win", big >= 1, big / 1),
-      A("rain", "Rainmaker", "🌧️", "$250+ Vybrance sales in 7 days", sales >= 250, sales / 250),
-      A("streak7", "Iron Will", "🔥", "Reach a 7-day streak", longest >= 7, longest / 7),
-      A("streak30", "Unbroken", "⛓️", "Reach a 30-day streak", longest >= 30, longest / 30),
-      A("rising", "Gear 3", "👊", "Reach Power Rating 1,800 (Gear 3)", rating >= 1800, rating / 1800),
-      A("gear5", "Gear 5", "☀️", "Reach Power Rating 11,000 (Gear 5)", rating >= 11000, rating / 11000),
-      A("monarch", "Shadow Monarch", "👑", "Reach Level 20", lvl >= 20, lvl / 20),
+      // ---- Core ----
+      A("first", "First Blood", "⚔️", "Core", "Log your very first rep.", reps >= 1, reps / 1, n(reps) + " / 1 rep"),
+      A("ten", "Warming Up", "🔁", "Core", "Log 10 reps total.", reps >= 10, reps / 10, n(reps) + " / 10 reps"),
+      A("century", "Centurion", "💯", "Core", "Log 100 reps total.", reps >= 100, reps / 100, n(reps) + " / 100 reps"),
+      A("allsix", "Renaissance", "🎯", "Core", "Train all six dimensions in a single day.", allSix, allSix ? 1 : 0, allSix ? "done" : "not yet"),
+      A("bigwin", "First Win", "🏆", "Core", "Land your first big win — book a gig or close a sale.", big >= 1, big / 1, n(big) + " / 1"),
+      A("streak7", "Iron Will", "🛡️", "Core", "Reach a 7-day streak.", longest >= 7, longest / 7, n(longest) + " / 7 days"),
+      A("streak30", "Unbroken", "⛓️", "Core", "Reach a 30-day streak.", longest >= 30, longest / 30, n(longest) + " / 30 days"),
+      // ---- Vybrance ----
+      A("hydrate1", "Hydrated", "💧", "Vybrance", "Hit your daily water goal once.", metDays >= 1, metDays / 1, n(metDays) + " / 1 day"),
+      A("hydrate7", "Water Sage", "🌊", "Vybrance", "Hit your water goal on 7 different days.", metDays >= 7, metDays / 7, n(metDays) + " / 7 days"),
+      A("rain", "Rainmaker", "🌧️", "Vybrance", "Pull $250+ in Vybrance sales in a 7-day window.", sales >= 250, sales / 250, "$" + n(sales) + " / $250"),
+      // ---- One Piece (Luffy's gears + haki) ----
+      A("gear3", "Gear 3", "👊", "One Piece", "Reach Power Rating 1,800 (Gear 3).", rating >= 1800, rating / 1800, n(rating) + " / 1,800"),
+      A("gear5", "Gear 5", "☀️", "One Piece", "Reach Power Rating 11,000 (Gear 5 · Sun God Nika).", rating >= 11000, rating / 11000, n(rating) + " / 11,000"),
+      A("haki", "Conqueror's Haki", "🏴‍☠️", "One Piece", "Land 5 big wins.", big >= 5, big / 5, n(big) + " / 5"),
+      // ---- Solo Leveling ----
+      A("monarch", "Shadow Monarch", "👑", "Solo Leveling", "Reach Level 20.", lvl >= 20, lvl / 20, "Lv " + n(lvl) + " / 20"),
+      // ---- Dragon Ball Z (power ladder) ----
+      A("ssj", "Super Saiyan", "🟡", "Dragon Ball Z", "Reach Power Rating 5,000.", rating >= 5000, rating / 5000, n(rating) + " / 5,000"),
+      A("over9000", "It's Over 9,000!", "💥", "Dragon Ball Z", "Reach Power Rating 9,000.", rating >= 9000, rating / 9000, n(rating) + " / 9,000"),
+      A("spiritbomb", "Spirit Bomb", "🔵", "Dragon Ball Z", "Gather $1,000+ in Vybrance sales in 7 days.", sales >= 1000, sales / 1000, "$" + n(sales) + " / $1,000"),
+      // ---- Naruto (perseverance + paths) ----
+      A("ninja", "Ninja Way", "🍥", "Naruto", "Hold a 21-day streak — never give up.", longest >= 21, longest / 21, n(longest) + " / 21 days"),
+      A("sage", "Sage Mode", "🐸", "Naruto", "Get your Spiritual dimension to Level 5.", spirit >= 5, spirit / 5, "Lv " + n(spirit) + " / 5"),
+      A("talk", "Talk no Jutsu", "🗣️", "Naruto", "Get your Social dimension to Level 5.", social >= 5, social / 5, "Lv " + n(social) + " / 5"),
+      A("hokage", "Hokage", "🔥", "Naruto", "Reach Level 25.", lvl >= 25, lvl / 25, "Lv " + n(lvl) + " / 25"),
+      // ---- Hunter x Hunter (exam, nen, money) ----
+      A("license", "Hunter License", "🪪", "Hunter x Hunter", "Reach Level 10 — pass the Hunter Exam.", lvl >= 10, lvl / 10, "Lv " + n(lvl) + " / 10"),
+      A("nen", "Nen Master", "🌀", "Hunter x Hunter", "Get all six dimensions to Level 3 (master every Nen type).", minDim >= 3, minDim / 3, "weakest dim Lv " + n(minDim) + " / 3"),
+      A("greed", "Greed Island", "💎", "Hunter x Hunter", "Reach $500+ in Vybrance sales in 7 days.", sales >= 500, sales / 500, "$" + n(sales) + " / $500"),
     ];
   }
   // reconstruct a Power Rating trend for the last `days` from the per-rep log (the recent ledger), so the

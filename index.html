@@ -321,7 +321,19 @@
 
   /* achievements */
   .achgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;}
-  .ach{position:relative;border:1px solid rgba(95,224,255,0.14);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:11px 5px 14px;text-align:center;background:rgba(4,8,16,0.5);opacity:0.5;transition:opacity .3s;min-height:84px;}
+  .ach{position:relative;border:1px solid rgba(95,224,255,0.14);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:11px 5px 14px;text-align:center;background:rgba(4,8,16,0.5);opacity:0.5;transition:opacity .2s, transform .12s;min-height:84px;cursor:pointer;}
+  .ach:active{transform:scale(.95);}
+  /* achievement detail (tap-to-see-how, shown in the bottom sheet) */
+  .achdetail{text-align:center;padding:8px 6px 4px;}
+  .achbig{font-size:60px;line-height:1;filter:grayscale(1) opacity(0.85);}
+  .achdetail.on .achbig{filter:none;}
+  .achttl{font-size:20px;font-weight:700;margin-top:10px;letter-spacing:-0.01em;}
+  .achhow{font-size:13.5px;color:var(--muted);line-height:1.5;margin-top:10px;}
+  .achhow b{color:var(--txt);}
+  .achbar{margin-top:16px;height:9px;}
+  .achbar > i{background:linear-gradient(90deg,var(--blue),var(--cyan));}
+  .achprog{font-family:var(--mono);font-size:12px;color:var(--cyan);margin-top:8px;letter-spacing:0.04em;}
+  .achunlocked{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:0.16em;color:var(--financial);margin-top:16px;text-shadow:0 0 12px rgba(63,224,160,0.4);}
   .ach.on{opacity:1;border-color:rgba(95,224,255,0.5);box-shadow:0 0 12px rgba(46,125,255,0.16), inset 0 0 14px rgba(95,224,255,0.05);}
   .ach .ai{font-size:23px;line-height:1.1;filter:grayscale(1) opacity(0.8);}
   .ach.on .ai{filter:none;}
@@ -817,15 +829,36 @@
       + '<circle class="sparkdot" cx="'+lastX+'" cy="'+lastY+'" r="3.2"/>';
   }
 
-  // ---- 🏅 achievements ----
+  // ---- 🏅 achievements (tap any badge to see how to earn it) ----
   function renderAchievements(){
     var list = G.achievements(st, now());
     var got = list.filter(function(a){ return a.unlocked; }).length;
     $("achMeta").textContent = got + " / " + list.length;
-    $("achGrid").innerHTML = list.map(function(a){
+    $("achGrid").innerHTML = list.map(function(a,i){
       var prog = a.unlocked ? '' : '<div class="ap"><i style="width:'+Math.round(a.progress*100)+'%"></i></div>';
-      return '<div class="ach'+(a.unlocked?' on':'')+'" title="'+esc(a.desc)+(a.unlocked?'':' ('+Math.round(a.progress*100)+'%)')+'"><div class="ai">'+a.icon+'</div><div class="an">'+esc(a.name)+'</div>'+prog+'</div>';
+      return '<div class="ach'+(a.unlocked?' on':'')+'" data-ach="'+i+'"><div class="ai">'+a.icon+'</div><div class="an">'+esc(a.name)+'</div>'+prog+'</div>';
     }).join("");
+    Array.prototype.forEach.call($("achGrid").querySelectorAll("[data-ach]"), function(el){
+      el.onclick = function(){ openAchievement(list[+el.getAttribute("data-ach")]); };
+    });
+  }
+  // tap-to-see-how detail, shown in the existing bottom sheet
+  function openAchievement(a){
+    if(!a) return;
+    $("sheetTitle").textContent = (a.saga ? a.saga+"  ·  " : "") + "Achievement";
+    $("sheetDesc").textContent = a.unlocked ? "✓ Unlocked" : ("Locked — "+Math.round(a.progress*100)+"% there");
+    var pct = Math.round(a.progress*100);
+    $("repList").innerHTML = '<div class="achdetail'+(a.unlocked?' on':'')+'">'
+      + '<div class="achbig">'+a.icon+'</div>'
+      + '<div class="achttl">'+esc(a.name)+'</div>'
+      + '<div class="achhow"><b>How to earn:</b> '+esc(a.desc)+'</div>'
+      + (a.unlocked
+          ? '<div class="achunlocked">✓ UNLOCKED</div>'
+          : '<div class="bar achbar"><i style="width:'+pct+'%"></i></div>'
+            + '<div class="achprog">'+esc(a.progressText||(pct+'%'))+'</div>')
+      + '</div>';
+    $("scrim").classList.add("show"); $("sheet").classList.add("show");
+    if(audioCtx && audioCtx.state==="suspended") audioCtx.resume();
   }
 
   // ---- 🌙 recovery-day banner ----
