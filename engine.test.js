@@ -233,7 +233,7 @@ test("5000 reps stay finite, fast, and log-capped", function () {
   var ms = Date.now() - t0;
   assert(isFinite(s.totalXp) && isFinite(s.incomeXp), "no NaN/Infinity");
   assert(isFinite(E.playerLevel(s)) && E.playerLevel(s) > 1, "level finite & grew");
-  assert(s.log.length === 200, "log capped at 200");
+  assert(s.log.length === 1000, "log capped at LOG_CAP (1000)");
   assert(ms < 4000, "ran in under 4s (was " + ms + "ms)");
 });
 
@@ -1041,6 +1041,44 @@ test("a WHOOP-red recovery day waives the physical Daily Quest requirement (rest
   assert(E.physicalWaived(s, day) && E.isDailyMet(s, day), "red day waives physical -> daily met");
   s.whoop = { date: ymd(0), recovery: 80, zone: "green" };
   assert(!E.physicalWaived(s, day) && !E.isDailyMet(s, day), "green day does NOT waive physical");
+});
+
+test("mergeStates loses NO reps when the unioned log exceeds the cap (aggregate from the FULL union)", function () {
+  var day = E.dayIndex(D(0));
+  function manyDistinct(K, tag) {
+    var s = E.newState("L", D(0));
+    s.history[day] = { physical: 0, mental: 0, spiritual: 0, family: 0, social: 0, financial: 0 };
+    s.log = [];
+    for (var i = 0; i < K; i++) {
+      s.log.push({ ts: 1e12 + i * 1000, day: day, dim: "financial", repId: null, name: tag + i, baseXp: 10, mult: 1, xp: 10, big: false, source: "test", extKey: tag + ":" + i, amount: null });
+      s.dims.financial += 10; s.totalXp += 10; s.incomeXp += 10; s.history[day].financial += 1;
+    }
+    s.lastActiveDay = day; s.daily = { day: day, completed: false };
+    return s;
+  }
+  var A = manyDistinct(600, "a"), B = manyDistinct(600, "b");   // union = 1200 distinct reps, exceeds the log cap
+  var m = E.mergeStates(A, B, D(0));
+  eq(m.totalXp, 12000, "no rep XP lost above the log cap");
+  eq(m.dims.financial, 12000, "dims reconstructed from the full union, not the sliced log");
+  eq((m.history[day] || {}).financial, 1200, "history count = full union (1200), not the cap");
+});
+
+test("mergeStates is order-independent for profile, statPoints, and activeTitle (CRDT convergence)", function () {
+  var A = E.applyRep(fresh(D(0)), "fin_book", D(0)).state;   // big win -> more progress + titles
+  var B = E.applyRep(fresh(D(0)), "ment_read", D(0)).state;
+  A.profile = { heightIn: 77, weightLb: 208, activityTier: "active" };
+  B.profile = { heightIn: 70, weightLb: 250, activityTier: "athlete" }; B.lastActiveDay = A.lastActiveDay;
+  A.activeTitle = "awakened"; B.activeTitle = "first_coin";
+  var ab = E.mergeStates(A, B, D(0)), ba = E.mergeStates(B, A, D(0));
+  eq(ab.profile, ba.profile, "profile merge order-independent");
+  eq(ab.activeTitle, ba.activeTitle, "activeTitle order-independent");
+  eq(JSON.stringify(ab.statPoints), JSON.stringify(ba.statPoints), "statPoints order-independent");
+});
+
+test("powerRating stays finite even for a corrupt astronomically-large save", function () {
+  var s = fresh(D(0)); s.totalXp = 1e308; s.incomeXp = 1e308; s.bigWins = 1e6;
+  var r = E.powerRating(s, D(0));
+  assert(Number.isFinite(r) && r >= 0, "powerRating never NaN/Infinity (got " + r + ")");
 });
 
 // ---------------------------------------------------------------- report

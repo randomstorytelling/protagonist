@@ -16,6 +16,8 @@
   "use strict";
 
   var SCHEMA_VERSION = 2;
+  var LOG_CAP = 1000;   // per-rep ledger bound. Sized so a single device needs ~3 months of offline activity
+                        // to truncate it; mergeStates aggregates from the FULL union, so sub-cap divergence is lossless.
 
   // ---------------------------------------------------------------- config
   var DIMENSIONS = ["physical", "mental", "spiritual", "family", "social", "financial"];
@@ -340,7 +342,7 @@
     }
     out.bigWins = nonNeg(s.bigWins);
     out.epoch = Math.floor(nonNeg(s.epoch));   // reset generation counter (preserved, never trusted as non-int)
-    if (Array.isArray(s.log)) out.log = s.log.slice(0, 200);
+    if (Array.isArray(s.log)) out.log = s.log.slice(0, LOG_CAP);
     out.lastActiveDay = Math.min(num(s.lastActiveDay, today), today); // future-dated -> clamp to today
     if (s.recurring && typeof s.recurring === "object") {
       out.recurring = {};
@@ -406,7 +408,7 @@
     if (Array.isArray(v1.log)) s.log = v1.log.map(function (e) {
       var ts = num(e.ts, null), dy = ts !== null ? dayIndex(new Date(ts)) : null;
       return { ts: ts, day: Number.isFinite(dy) ? dy : null, dim: e.dim, repId: e.repId || null, name: e.name, baseXp: num(e.xp, 0), mult: num(e.mult, 1), xp: num(e.xp, 0) };
-    }).slice(0, 200);
+    }).slice(0, LOG_CAP);
     s.statPoints.available = Math.max(0, (levelFromXp(s.totalXp).level - 1) * CONFIG.statPointsPerLevel);
     recomputeStreak(s, safeToday(now));
     return s;
@@ -519,26 +521,27 @@
     out.player.initials = initialsOf(out.player.name);
     out.epoch = A.epoch;
 
-    // log: union deduped by (ts,dim,name,xp), newest-first, capped at 200. Computed FIRST because the
-    // aggregates are reconstructed from it — the log is the per-rep ledger that survives a merge intact.
+    // log: union deduped by extKey (external/deduped reps) else (ts,dim,name,xp), newest-first. Build the
+    // FULL deduped union FIRST and aggregate from THAT (gU below); only AFTER do we slice for storage. The
+    // earlier code aggregated from the already-sliced out.log, so a union exceeding the cap silently dropped
+    // reps/XP — the aggregate must see EVERY unioned rep, not just the most-recent cap of them.
     var seenLog = {}, log = [];
     (A.log || []).concat(B.log || []).forEach(function (e) {
       if (!e) return;
-      // dedup external/deduped reps by their stable extKey (same event on two devices -> ONE entry, so the
-      // aggregate reconstruction can't double-count); fall back to the ts-shape key for manual reps.
       var key = e.extKey ? ("x|" + e.extKey) : (num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0));
       if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
     });
     log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
-    out.log = log.slice(0, 200);
+    out.log = log.slice(0, LOG_CAP);   // recent ledger for display; aggregates use the FULL union (gU) below
 
-    // CRDT-style aggregate merge. Per-cell MAX silently DESTROYS reps when two devices log in the SAME
-    // dimension on the SAME day (the offline-divergence case the merge exists for: max(3,2)=3, not 5).
-    // Instead: divergent reps are RECENT, so they're in the unioned log; older reps are shared (equal on
-    // both). For each aggregate take max( stored-on-either, aged-portion + unioned-log ), where aged-portion
-    // = total minus that device's own log. This restores the divergent reps without double-counting; the
-    // candidate always dominates the old MAX, and the result is idempotent + order-independent.
-    var gA = logAgg(A.log), gB = logAgg(B.log), gU = logAgg(out.log);
+    // CRDT-style aggregate merge. Divergent reps are RECENT (in the unioned log); older reps are shared (equal
+    // on both). For each aggregate take max( stored-on-either, aged-portion + FULL-unioned-log ), aged-portion
+    // = total minus that device's own logged portion. gU aggregates the FULL union (NOT the sliced out.log),
+    // so no rep is lost when the union exceeds LOG_CAP. Residual edge: only if BOTH devices have already
+    // truncated their own logs (>LOG_CAP lifetime reps each) AND each still holds divergent reps beyond that
+    // window can the lower-total device's older divergent reps be unrecoverable — months of single-device
+    // offline use. The common cases (superset sync, sub-cap divergence) are fully lossless and double-count-free.
+    var gA = logAgg(A.log), gB = logAgg(B.log), gU = logAgg(log);
     out.totalXp  = Math.max(A.totalXp,  B.totalXp,  Math.max(0, A.totalXp  - gA.total,  B.totalXp  - gB.total)  + gU.total);
     out.incomeXp = Math.max(A.incomeXp, B.incomeXp, Math.max(0, A.incomeXp - gA.income, B.incomeXp - gB.income) + gU.income);
     out.bigWins  = Math.max(A.bigWins,  B.bigWins,  Math.max(0, A.bigWins  - gA.big,    B.bigWins  - gB.big)    + gU.big);
@@ -583,14 +586,25 @@
     var tset = {};
     (A.unlockedTitles || []).concat(B.unlockedTitles || []).forEach(function (id) { if (TITLE_BY_ID[id]) tset[id] = 1; });
     out.unlockedTitles = Object.keys(tset);
-    out.activeTitle = (A.activeTitle && TITLE_BY_ID[A.activeTitle]) ? A.activeTitle : ((B.activeTitle && TITLE_BY_ID[B.activeTitle]) ? B.activeTitle : null);
+    // active title: deterministic + order-independent — highest passive bonus wins, tie-break by id
+    var tA = (A.activeTitle && TITLE_BY_ID[A.activeTitle]) ? A.activeTitle : null;
+    var tB = (B.activeTitle && TITLE_BY_ID[B.activeTitle]) ? B.activeTitle : null;
+    if (tA && tB && tA !== tB) {
+      var bA = TITLE_BY_ID[tA].bonusPct, bB = TITLE_BY_ID[tB].bonusPct;
+      out.activeTitle = (bA !== bB) ? (bA > bB ? tA : tB) : (tA < tB ? tA : tB);
+    } else out.activeTitle = tA || tB || null;
 
     // stat points are a CONSERVED pool: earned == available + sum(allocated), earned derived from level.
     // Maxing available & each allocated[] independently fabricates points (allocate-6-to-financial on A and
     // 6-to-physical on B -> 12 exist where 6 were earned). Instead keep the allocation from the further-
     // progressed device, then derive available from the merged earned total so the books always balance.
     var earned = Math.max(0, (levelFromXp(out.totalXp).level - 1) * CONFIG.statPointsPerLevel);
-    var chosen = (A.totalXp >= B.totalXp ? A : B).statPoints.allocated;
+    // pick the further-progressed device's allocation; deterministic tie-break (more allocated, then a stable
+    // serialization) so the merge is order-independent even when totalXp ties.
+    function allocKey(s) { var sum = 0; DIMENSIONS.forEach(function (d) { sum += Math.max(0, Math.floor(num(s.statPoints.allocated[d], 0))); }); return [num(s.totalXp, 0), sum, JSON.stringify(s.statPoints.allocated)]; }
+    var kA = allocKey(A), kB = allocKey(B), pickSP = A;
+    for (var spi = 0; spi < kA.length; spi++) { if (kA[spi] !== kB[spi]) { pickSP = (kA[spi] > kB[spi]) ? A : B; break; } }
+    var chosen = pickSP.statPoints.allocated;
     var alloc = emptyDay(), allocSum = 0;
     DIMENSIONS.forEach(function (d) { alloc[d] = Math.max(0, Math.floor(num(chosen[d], 0))); allocSum += alloc[d]; });
     if (allocSum > earned) { alloc = emptyDay(); allocSum = 0; }   // allocation can't exceed earned -> fall back to all-available
@@ -618,6 +632,21 @@
     // penalty: cleared if EITHER device cleared it (never re-penalize a device that already recovered)
     var pActive = !!(A.penalty.active && B.penalty.active);
     out.penalty = { active: pActive, sinceDay: pActive ? Math.max(num(A.penalty.sinceDay, 0), num(B.penalty.sinceDay, 0)) : null };
+
+    // profile (build/activity): deterministic, order-independent pick — most-recently-active device, then
+    // most-progressed, then heavier weight, then a stable serialization. (Both devices normally hold the same
+    // profile; this only matters once a profile editor exists and the two diverge.)
+    (function () {
+      var a = A.profile, b = B.profile;
+      if (!a && !b) return;
+      if (!a) { out.profile = clone(b); return; }
+      if (!b) { out.profile = clone(a); return; }
+      var ka = [num(A.lastActiveDay, 0), num(A.totalXp, 0), num(a.weightLb, 0), JSON.stringify(a)];
+      var kb = [num(B.lastActiveDay, 0), num(B.totalXp, 0), num(b.weightLb, 0), JSON.stringify(b)];
+      var pick = a;
+      for (var i = 0; i < ka.length; i++) { if (ka[i] !== kb[i]) { pick = (ka[i] > kb[i]) ? a : b; break; } }
+      out.profile = clone(pick);
+    })();
 
     recomputeStreak(out, safeToday(now));       // streak is always derived from the merged history
     out.version = SCHEMA_VERSION;
@@ -655,7 +684,7 @@
     // independent offline credits of the SAME external event (same id, different wall-clock ts) into ONE
     // log entry before aggregates are reconstructed — without it the ts-keyed union double-counts them.
     s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual", extKey: rep.extKey || null, amount: (rep.amount != null ? num(rep.amount, 0) : null) });
-    if (s.log.length > 200) s.log.length = 200;
+    if (s.log.length > LOG_CAP) s.log.length = LOG_CAP;
     s.lastActiveDay = today;
 
     if (!s.daily.completed && isDailyMet(s, today)) {
@@ -761,7 +790,8 @@
     var consistency = 1 + 0.01 * Math.min(streaks, 60);          // keeping every streak alive => up to +60%
     var rec = (state.whoop && state.whoop.recovery != null) ? clamp(num(state.whoop.recovery, 70), 0, 100) : 70;
     var vitality = 0.80 + 0.20 * (rec / 100);                    // 0.80–1.00 — your body's readiness nudges your power
-    return Math.round((core + earn + wins) * consistency * vitality);
+    var r = Math.round((core + earn + wins) * consistency * vitality);
+    return Number.isFinite(r) ? Math.max(0, Math.min(r, 9e15)) : 0;   // never NaN/Infinity, even on a corrupt save
   }
   // power stages = Luffy's gears (One Piece): the Power Rating tier you're in == the gear you've unlocked.
   var POWER_TIERS = [

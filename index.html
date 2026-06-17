@@ -723,10 +723,13 @@
     // daily quest
     var dp = G.dailyProgress(st, td), req = G.CONFIG.dailyQuest.requirements, rq="";
     G.DIMENSIONS.forEach(function(d){
-      var have = (st.history[td]&&st.history[td][d])||0, need = req[d]||0, met = have>=need;
+      var have = (st.history[td]&&st.history[td][d])||0, need = req[d]||0;
+      var waived = (d==="physical" && G.physicalWaived(st, td));   // WHOOP-red recovery day waives Physical
+      var met = have>=need || waived;
+      var ct = (waived && have<need) ? "rest ✓" : (Math.min(have,need)+" / "+need);
       rq += '<div class="req'+(met?" met":"")+'"><span class="ic">'+(met?"✓":"○")+'</span>'
           + '<span class="nm" style="color:'+(met?'':DIM[d].hex)+'">'+DIM[d].label+'</span>'
-          + '<span class="ct">'+Math.min(have,need)+' / '+need+'</span></div>';
+          + '<span class="ct">'+ct+'</span></div>';
     });
     $("dailyReqs").innerHTML = rq;
     $("dailyMeta").textContent = dp.done + " / " + dp.total;
@@ -1042,7 +1045,9 @@
   // signs in async and replaces st wholesale) can't erase the credit — replayPendingWhoop re-applies them.
   var pendingWhoop = [];
   function ingestWhoopPayload(obj, srcLabel){
-    if(srcLabel !== "replay") pendingWhoop.push(obj);
+    // bound the replay buffer: ingest is idempotent (deduped), so we only need the recent payloads to bridge
+    // the pre-cloudReady window — keeping every payload forever would make each snapshot's replay O(n) -> O(n²).
+    if(srcLabel !== "replay"){ pendingWhoop.push(obj); if(pendingWhoop.length > 20) pendingWhoop.shift(); }
     var routed = G.classifyWhoopPayload(obj);   // partitions {days:[…]} / {activities:[…]} / single / MIXED arrays
     var n = 0, events = [];
     if(routed.days.length){ var rd = G.ingestWhoopDays(st, routed.days, now()); st = rd.state; n += (rd.credited||[]).length; events = events.concat(rd.events); }
