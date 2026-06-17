@@ -21,7 +21,8 @@
 <meta name="theme-color" content="#05070e" />
 <meta name="apple-mobile-web-app-title" content="Protagonist" />
 <link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
 <link rel="icon" href="icon.svg" type="image/svg+xml" />
 <title>The System</title>
 <style>
@@ -62,9 +63,11 @@
   .hdr .who{flex:1;min-width:0;}
   .hdr .nm{font-size:17px;font-weight:600;letter-spacing:0.01em;}
   .hdr .ttl{font-family:var(--mono);font-size:11px;color:var(--gold);letter-spacing:0.06em;margin-top:1px;}
-  .rankbadge{flex:0 0 auto;text-align:center;}
-  .rankbadge .r{font-family:var(--mono);font-weight:700;font-size:26px;line-height:1;color:var(--cyan);text-shadow:0 0 12px var(--cyan-glow);}
-  .rankbadge .lv{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-top:3px;}
+  .rankbadge{flex:0 0 auto;text-align:right;}
+  .rankbadge .r{display:inline-block;font-family:var(--mono);font-weight:700;font-size:12.5px;letter-spacing:0.03em;line-height:1;color:var(--cyan);
+    border:1px solid var(--cyan);border-radius:99px;padding:5px 11px;white-space:nowrap;
+    box-shadow:0 0 12px rgba(46,125,255,0.20), inset 0 0 10px rgba(95,224,255,0.06);text-shadow:0 0 8px var(--cyan-glow);}
+  .rankbadge .lv{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-top:6px;}
 
   .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .ph .t{font-family:var(--mono);font-size:12px;letter-spacing:0.12em;color:var(--cyan);text-transform:uppercase;}
@@ -187,6 +190,43 @@
   .whoopcoach b{color:var(--txt);}
   .whoop .meta{color:var(--faint2);}
 
+  /* hydration — a fun "fill the tank every day" bar */
+  .hydrowrap{position:relative;height:50px;border-radius:9px;overflow:hidden;
+    background:rgba(4,10,22,0.9);border:1px solid rgba(95,224,255,0.22);box-shadow:inset 0 0 20px rgba(0,0,0,0.55);}
+  .hydrofill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:9px 0 0 9px;
+    background:linear-gradient(180deg,#8fefff 0%,#39b8ff 48%,#1f7fe6 100%);
+    box-shadow:0 0 20px rgba(63,180,255,0.55),inset 0 1px 0 rgba(255,255,255,0.45);
+    transition:width .75s cubic-bezier(.2,.85,.25,1);}
+  .hydrofill.full{background:linear-gradient(180deg,#9bffd9 0%,#3fe0a0 50%,#1fb37a 100%);
+    box-shadow:0 0 26px rgba(63,224,160,0.6),inset 0 1px 0 rgba(255,255,255,0.5);}
+  .hydrowave{position:absolute;top:-6px;bottom:-6px;right:-3px;width:16px;background:rgba(255,255,255,0.4);
+    filter:blur(4px);border-radius:50%;animation:hydrobob 2.3s ease-in-out infinite;}
+  @keyframes hydrobob{0%,100%{transform:translateY(-4px)}50%{transform:translateY(4px)}}
+  .hydrotxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;
+    padding:0 13px;font-family:var(--mono);font-size:14px;font-weight:700;color:#eef9ff;
+    text-shadow:0 1px 4px rgba(0,8,20,0.85);pointer-events:none;}
+  .hydrotxt .pct{color:#cdefff;font-size:13px;}
+  .hydrobtns{display:flex;gap:7px;margin-top:11px;}
+  .hydrobtn{flex:1;font-family:var(--mono);font-size:12px;padding:9px 3px;border:1px solid var(--line);
+    border-radius:7px;background:rgba(46,125,255,0.10);color:var(--txt);cursor:pointer;text-align:center;line-height:1.25;}
+  .hydrobtn:active{background:rgba(63,180,255,0.30);transform:scale(.97);}
+  .hydrobtn .oz{display:block;font-size:9.5px;color:var(--muted);margin-top:3px;}
+  .hydrofoot{display:flex;align-items:center;justify-content:space-between;margin-top:11px;
+    font-family:var(--mono);font-size:11px;}
+  .hydrofoot .left{color:var(--muted);}
+  .hydrofoot .left .met{color:#3fe0a0;}
+  .hydrofoot .streak{color:#5fe0ff;}
+  .hydrocap{font-family:var(--mono);font-size:10px;color:var(--faint2);margin-top:9px;line-height:1.45;letter-spacing:0.02em;}
+
+  /* not-signed-in banner — so an empty local view is never mistaken for lost data */
+  .signin-banner{border-color:var(--gold);box-shadow:0 0 0 1px rgba(255,215,106,0.10),0 0 22px rgba(255,215,106,0.10);}
+  .signin-banner:before,.signin-banner:after{border-color:var(--gold);}
+  .signin-banner .bmsg{font-size:13px;color:#ffe9b0;line-height:1.5;margin-bottom:11px;}
+  .signin-banner .bmsg b{color:#fff3d6;}
+  .bsignin{width:100%;font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:0.04em;
+    padding:12px;border:1px solid var(--gold);border-radius:6px;background:rgba(255,215,106,0.12);color:var(--gold);cursor:pointer;}
+  .bsignin:active{background:rgba(255,215,106,0.26);}
+
   /* bottom sheet */
   .scrim{position:fixed;inset:0;background:rgba(2,4,9,0.7);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;z-index:40;}
   .scrim.show{opacity:1;pointer-events:auto;}
@@ -202,6 +242,98 @@
   .reprow .t{font-size:13.5px;}
   .reprow .v{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;}
   .big-badge{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:0.1em;color:#06120d;background:var(--gold);padding:2px 5px;border-radius:3px;margin-left:7px;vertical-align:1px;}
+
+  /* ⚡ Power Rating marquee — the culmination number */
+  .rating{background:
+    radial-gradient(120% 90% at 50% -20%, rgba(95,224,255,0.14), transparent 65%),
+    var(--panel);border-color:rgba(95,224,255,0.45);
+    box-shadow:0 0 0 1px rgba(95,224,255,0.08), 0 0 30px rgba(46,125,255,0.12), inset 0 0 34px rgba(46,125,255,0.07);}
+  .rating .ph .t{color:var(--cyan);}
+  .rating .meta{font-family:var(--mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);}
+  .ratingrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:2px 0 10px;}
+  .ratingnum{font-family:var(--mono);font-size:46px;font-weight:700;line-height:1;color:var(--cyan);text-shadow:0 0 22px var(--cyan-glow);letter-spacing:-0.01em;}
+  .ratingside{text-align:right;}
+  .ratingtrend{font-family:var(--mono);font-size:12px;color:var(--financial);}
+  .ratingtrend b{color:#7dffc4;}
+  .ratingnext{font-family:var(--mono);font-size:10.5px;color:var(--faint2);margin-top:3px;letter-spacing:0.03em;}
+  .tierbar > i{background:linear-gradient(90deg,var(--blue),var(--cyan));}
+
+  /* 📊 weekly pulse */
+  .pulsegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .pulsetile{background:rgba(4,8,16,0.6);border:1px solid rgba(95,224,255,0.14);border-radius:10px;padding:11px 6px;text-align:center;}
+  .pulsetile .pv{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--txt);line-height:1.05;}
+  .pulsetile .pl{font-family:var(--mono);font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);margin-top:5px;}
+
+  /* ◇ stat hexagon */
+  .hexwrap{display:flex;justify-content:center;margin:2px 0 14px;}
+  .hexsvg{width:200px;height:180px;}
+  .hexgrid{fill:none;stroke:rgba(95,224,255,0.16);stroke-width:1;}
+  .hexaxis{stroke:rgba(95,224,255,0.12);stroke-width:1;}
+  .hexpoly{fill:rgba(95,224,255,0.14);stroke:var(--cyan);stroke-width:2;filter:drop-shadow(0 0 6px var(--cyan-glow));}
+  .hexlbl{font-family:var(--mono);font-size:9px;fill:var(--muted);}
+  .hexdot{stroke:#06121f;stroke-width:1;}
+
+  /* power level growth line */
+  .growth{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;padding-top:9px;border-top:1px dashed rgba(95,224,255,0.16);line-height:1.45;}
+  .growth b{color:var(--financial);}
+
+  /* per-category streak chip */
+  .dstreak{font-family:var(--mono);font-size:10px;color:#ffb454;background:rgba(255,140,60,0.10);border:1px solid rgba(255,140,60,0.30);border-radius:99px;padding:1px 7px;margin-right:8px;vertical-align:1px;}
+
+  /* body diagram */
+  .bodywrap{display:flex;gap:14px;align-items:center;}
+  .bodysvg{width:140px;height:266px;flex:0 0 auto;display:block;margin:2px auto;}
+  .bp{transition:fill-opacity .5s, filter .5s, stroke-opacity .5s;stroke-width:1.5;cursor:pointer;}
+  .bodylegend{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0;}
+  .blgd{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);opacity:0.55;transition:opacity .3s;}
+  .blgd.on{opacity:1;color:var(--txt);}
+  .blgd .bdot{width:10px;height:10px;border-radius:3px;background:var(--c);flex:0 0 auto;box-shadow:none;}
+  .blgd.on .bdot{box-shadow:0 0 9px var(--c);}
+  .blgd .bpart{color:var(--faint2);font-family:var(--mono);font-size:10px;margin-left:auto;}
+  .blgd.on .bpart{color:var(--muted);}
+
+  /* ===== Apple HIG polish (keeps the dark System identity) ===== */
+  body{padding-top:calc(10px + env(safe-area-inset-top));}
+  .hdr{margin-top:4px;margin-bottom:18px;}
+  .hdr .nm{font-size:22px;font-weight:700;letter-spacing:-0.015em;}
+  .panel{border-radius:16px;padding:16px;margin-bottom:14px;} /* keep the base 6px blur — stacking 14px on ~12 panels janks scroll on older iOS */
+  .ph .t{font-size:12.5px;}
+  .repbtn{border-radius:14px;padding:16px;min-height:52px;font-size:15px;}
+  .bar{height:9px;border-radius:99px;}
+  .hydrobtn,.recbtn,.whoopbtn,.allocbtn,.bsignin,.smartrow button{min-height:44px;}
+  .smartrow input{min-height:46px;border-radius:12px;}
+  .smartrow button{border-radius:12px;}
+  .reprow{border-radius:12px;padding:13px;min-height:48px;}
+  .sheet{border-radius:20px 20px 0 0;}
+  .note{border-radius:16px;}
+  .hydrowrap{border-radius:13px;}
+  .hydrobtn{border-radius:12px;}
+
+  /* rating trend sparkline */
+  .ratingspark{margin-top:11px;height:42px;width:100%;display:block;}
+  .sparkline{fill:none;stroke:var(--cyan);stroke-width:2;filter:drop-shadow(0 0 4px var(--cyan-glow));}
+  .sparkarea{fill:rgba(95,224,255,0.12);}
+  .sparkdot{fill:var(--cyan);}
+
+  /* recovery-day banner */
+  .recoveryday{font-family:var(--mono);font-size:11.5px;color:#9ad0ff;background:rgba(46,125,255,0.10);border:1px solid rgba(95,224,255,0.25);border-radius:10px;padding:9px 11px;margin-bottom:11px;line-height:1.45;}
+  .recoveryday b{color:#cfeaff;}
+
+  /* achievements */
+  .achgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;}
+  .ach{position:relative;border:1px solid rgba(95,224,255,0.14);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:11px 5px 14px;text-align:center;background:rgba(4,8,16,0.5);opacity:0.5;transition:opacity .3s;min-height:84px;}
+  .ach.on{opacity:1;border-color:rgba(95,224,255,0.5);box-shadow:0 0 12px rgba(46,125,255,0.16), inset 0 0 14px rgba(95,224,255,0.05);}
+  .ach .ai{font-size:23px;line-height:1.1;filter:grayscale(1) opacity(0.8);}
+  .ach.on .ai{filter:none;}
+  .ach .an{font-family:var(--mono);font-size:8.5px;letter-spacing:0.01em;color:var(--muted);line-height:1.2;}
+  .ach.on .an{color:var(--txt);}
+  .ach .ap{position:absolute;bottom:6px;left:7px;right:7px;height:3px;border-radius:99px;background:rgba(95,224,255,0.12);overflow:hidden;}
+  .ach .ap > i{display:block;height:100%;background:var(--cyan-dim);}
+  .ach.on .ap{display:none;}
+
+  /* share button */
+  .sharebtn{width:100%;font-family:var(--mono);font-size:12px;letter-spacing:0.06em;text-transform:uppercase;padding:13px;border:1px solid var(--cyan);border-radius:12px;background:rgba(46,125,255,0.10);color:var(--cyan);cursor:pointer;box-shadow:0 0 14px rgba(46,125,255,0.12);}
+  .sharebtn:active{background:rgba(46,125,255,0.24);}
 
   /* notification windows */
   .notewrap{position:fixed;left:0;right:0;top:14%;display:flex;justify-content:center;z-index:60;pointer-events:none;padding:0 16px;}
@@ -230,11 +362,30 @@
     <div class="rankbadge"><div class="r" id="rank">E</div><div class="lv" id="plvl">LV 1</div></div>
   </div>
 
+  <div class="panel signin-banner" id="signinBanner" style="display:none">
+    <div class="bmsg">⚠ <b>Not synced on this device.</b> Your saved progress — XP, streaks, WHOOP &amp; tasks — lives in the cloud. Nothing was lost; sign in to load it.</div>
+    <button class="bsignin" id="bannerSignIn">☁ Sign in with Google</button>
+  </div>
+
+  <div class="panel rating" id="ratingPanel">
+    <div class="ph"><span class="t">⚡ Power Rating</span><span class="meta" id="ratingTier">—</span></div>
+    <div class="ratingrow">
+      <div class="ratingnum" id="ratingNum">0</div>
+      <div class="ratingside">
+        <div class="ratingtrend" id="ratingTrend"></div>
+        <div class="ratingnext" id="ratingNext"></div>
+      </div>
+    </div>
+    <div class="bar tierbar"><i id="tierBar" style="width:0%"></i></div>
+    <svg class="ratingspark" id="ratingSpark" viewBox="0 0 300 42" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
   <div class="panel hero">
-    <div class="ph"><span class="t">Income Level</span><span class="meta">main quest</span></div>
+    <div class="ph"><span class="t">⚡ Power Level</span><span class="meta">capacity to earn</span></div>
     <div class="big" id="incLvl">Lv 1</div>
-    <div class="sub" id="incSub">0 income XP</div>
+    <div class="sub" id="incSub">0 power · grows as your activities stack</div>
     <div class="bar herobar"><i id="incBar" style="width:0%"></i></div>
+    <div class="growth" id="growthLine"></div>
   </div>
 
   <div class="panel buff" id="buffPanel">
@@ -243,6 +394,17 @@
       <div class="cap" id="buffCap"></div>
       <div class="dots" id="dots"></div>
     </div>
+  </div>
+
+  <div class="panel hydro" id="hydroPanel">
+    <div class="ph"><span class="t">💧 Hydration</span><span class="meta" id="hydroMeta">0 / 125 oz</span></div>
+    <div class="hydrowrap">
+      <div class="hydrofill" id="hydroFill"><div class="hydrowave"></div></div>
+      <div class="hydrotxt"><span id="hydroOz">0 oz</span><span class="pct" id="hydroPct">0%</span></div>
+    </div>
+    <div class="hydrobtns" id="hydroBtns"></div>
+    <div class="hydrofoot"><span class="left" id="hydroLeft"></span><span class="streak" id="hydroStreak"></span></div>
+    <div class="hydrocap" id="hydroCap"></div>
   </div>
 
   <div class="panel whoop" id="whoopPanel" style="display:none">
@@ -279,6 +441,7 @@
 
   <div class="panel" id="dailyPanel">
     <div class="ph"><span class="t">Daily Quest</span><span class="meta" id="dailyMeta">0 / 6</span></div>
+    <div class="recoveryday" id="recoveryDay" style="display:none"></div>
     <div id="dailyReqs"></div>
     <div id="dailyFoot"></div>
   </div>
@@ -286,13 +449,40 @@
   <button class="repbtn" id="getRep">▸ Get a rep in</button>
   <div class="suggest" id="suggest"></div>
 
+  <div class="panel" id="bodyPanel">
+    <div class="ph"><span class="t">⚡ What's Powering Up</span><span class="meta">today</span></div>
+    <div class="bodywrap">
+      <svg class="bodysvg" id="bodySvg" viewBox="0 0 200 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Your body, lit up by the dimensions you trained today">
+        <path class="bp" data-dim="financial" d="M76 214 L64 368 L88 368 L100 250 L112 368 L136 368 L124 214 Z"/>
+        <path class="bp" data-dim="family" d="M64 96 L40 208 L55 213 L82 110 Z"/>
+        <path class="bp" data-dim="social" d="M136 96 L160 208 L145 213 L118 110 Z"/>
+        <rect x="91" y="70" width="18" height="26" rx="6" fill="rgba(95,224,255,0.10)" stroke="rgba(95,224,255,0.22)" stroke-width="1"/>
+        <path class="bp" data-dim="physical" d="M70 150 L130 150 L124 218 L76 218 Z"/>
+        <path class="bp" data-dim="spiritual" d="M62 92 Q100 84 138 92 L130 152 L70 152 Z"/>
+        <circle class="bp" data-dim="mental" cx="100" cy="46" r="27"/>
+      </svg>
+      <div class="bodylegend" id="bodyLegend"></div>
+    </div>
+  </div>
+
   <div class="panel" id="statsPanel">
     <div class="ph"><span class="t">Stats</span><span class="meta">your six dimensions</span></div>
+    <div class="hexwrap"><svg class="hexsvg" id="hexSvg" viewBox="0 0 220 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stat hexagon across your six dimensions"></svg></div>
     <div id="stats"></div>
     <div class="alloc" id="allocBox" style="display:none">
       <div class="lab">Ability points: <span class="pts" id="apCount">0</span> — assign them</div>
       <div class="allocrow" id="allocRow"></div>
     </div>
+  </div>
+
+  <div class="panel" id="pulsePanel">
+    <div class="ph"><span class="t">📊 Weekly Pulse</span><span class="meta">last 7 days</span></div>
+    <div class="pulsegrid" id="pulseGrid"></div>
+  </div>
+
+  <div class="panel" id="achPanel">
+    <div class="ph"><span class="t">🏅 Achievements</span><span class="meta" id="achMeta"></span></div>
+    <div class="achgrid" id="achGrid"></div>
   </div>
 
   <div class="panel" id="recPanel">
@@ -304,6 +494,9 @@
     <div class="ph"><span class="t">System Log</span><span class="meta" id="streak"></span></div>
     <div id="logList"></div>
   </div>
+
+  <button class="sharebtn" id="shareBtn">⤴ Share my System card</button>
+  <canvas id="shareCanvas" width="1080" height="1350" style="display:none"></canvas>
 
   <div class="footnote">
     THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
@@ -357,7 +550,7 @@
   };
   var st, queue = [], showing = false, audioCtx = null;
   var FB = window.__FB || null;
-  var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false, cloudReady = false;
+  var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false, cloudReady = false, authResolved = false;
 
   function now(){ return new Date(); }
   function today(){ return G.dayIndex(now()); }
@@ -386,6 +579,7 @@
         try{ var b=$("syncBtn"); if(b && !FB.auth.currentUser){ b.textContent="☁ sign-in failed — tap to retry"; } }catch(_){} }
     }); }catch(e){}
     FB.auth.onAuthStateChanged(function(user){
+      authResolved = true;
       updateAuthUI(user);
       if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
       cloudReady = false;                                   // must reconcile with the SERVER copy before any push (prevents reset-on-sign-in)
@@ -417,6 +611,13 @@
     });
   }
   function updateAuthUI(user){
+    // signed-out banner: only once auth has definitively resolved to "no user" (never flash mid-check or when offline-only)
+    var banner = $("signinBanner");
+    if(banner){
+      var signedOut = (authResolved && user === null);
+      banner.style.display = signedOut ? "" : "none";
+      if(signedOut){ var bs = $("bannerSignIn"); if(bs) bs.onclick = startGoogleSignIn; }
+    }
     var b = $("syncBtn"); if(!b) return;
     if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
     if(user){
@@ -446,13 +647,14 @@
   // ---- notifications ----
   var NOTE = {
     LEVEL_UP: function(e){ return { t:"[ LEVEL UP ]", lines:["You are now Level "+e.to+".","All stats increased. +"+e.statPoints+" ability points."] }; },
-    RANK_UP: function(e){ return { t:"[ RANK UP ]", lines:["You have risen to "+e.to+(e.to==="National Level"?".":"-Rank.")] }; },
+    RANK_UP: function(e){ return { t:"[ RANK UP ]", lines:["You have risen to "+e.to+"."], gold:true }; },
     INCOME_LEVEL_UP: function(e){ return { t:"[ INCOME LEVEL UP ]", lines:["Income Level "+e.to+" reached."], gold:true }; },
     TITLE_UNLOCKED: function(e){ return { t:"[ TITLE ACQUIRED ]", lines:['You earned the title "'+e.name+'".'], gold:true }; },
     DAILY_COMPLETE: function(e){ return { t:"[ DAILY QUEST COMPLETE ]", lines:["+"+e.reward+" XP. The System is pleased."] }; },
     PENALTY_INCURRED: function(){ return { t:"[ PENALTY ]", lines:["You failed a Daily Quest.","Income amplification is locked until you clear today's quest."], danger:true }; },
     PENALTY_CLEARED: function(){ return { t:"[ PENALTY CLEARED ]", lines:["Daily Quest complete. Your power returns."] }; },
     RECURRING_DONE: function(e){ return { t:"[ UPKEEP COMPLETE ]", lines:[e.name+" done. Logged to the System."] }; },
+    HYDRATION_GOAL: function(e){ return { t:"[ HYDRATION COMPLETE ]", lines:[e.goalOz+"oz down — your body is fueled.","A Physical rep is logged. Streak kept alive."], gold:true }; },
   };
   function enqueue(events){ (events||[]).forEach(function(e){ if(NOTE[e.type]) queue.push(NOTE[e.type](e)); }); pump(); }
   function pump(){
@@ -492,8 +694,12 @@
 
     var il = G.levelFromXp(st.incomeXp);
     $("incLvl").textContent = "Lv " + il.level;
-    $("incSub").textContent = st.incomeXp + " income XP · " + (il.need - il.intoLevel) + " to next";
+    $("incSub").textContent = st.incomeXp + " power · " + (il.need - il.intoLevel) + " to next level";
     $("incBar").style.width = il.pct + "%";
+    var sales7 = G.recentSalesTotal(st, 7, now());
+    $("growthLine").innerHTML = sales7 > 0
+      ? '🌱 <b>$' + sales7.toLocaleString() + '</b> in Vybrance sales (7d) is feeding your growth'
+      : '🌱 Vybrance reps are seeds — your level grows as last-7-day sales come in';
 
     var m = G.multiplier(st, td), pen = G.isPenalized(st), eng = G.engineDimsActive(st, td);
     $("mult").textContent = "×" + m.toFixed(2);
@@ -502,8 +708,8 @@
     var need = Math.max(0, capN - eng);
     $("buffCap").innerHTML = pen
       ? 'Amplification <b style="color:var(--danger)">locked</b> — clear today\'s Daily Quest to restore it.'
-      : (eng >= capN ? 'Fully vibrant — your whole life is <b style="color:var(--cyan)">fueling your income</b>.'
-                 : 'Light up '+need+' more life area'+(need===1?'':'s')+' to raise your income rate.');
+      : (eng >= capN ? 'Fully vibrant — your whole life is <b style="color:var(--cyan)">fueling your earning power</b>.'
+                 : 'Light up '+need+' more life area'+(need===1?'':'s')+' to raise your earning power.');
     var dh = "";
     G.ENGINE_DIMS.forEach(function(d){
       var on = (st.history[td]&&st.history[td][d]>0);
@@ -532,9 +738,11 @@
     var sh = "";
     G.DIMENSIONS.forEach(function(d){
       var li = G.levelFromXp(st.dims[d]), rt = (st.history[td]&&st.history[td][d])||0;
-      var note = d==="financial" ? ' <span style="color:var(--faint2);font-weight:400">— income</span>' : '';
+      var streak = G.dimStreak(st, d, now());
+      var note = d==="financial" ? ' <span style="color:var(--faint2);font-weight:400">— power · seeds</span>' : '';
       var alloc = st.statPoints.allocated[d] ? ' · '+st.statPoints.allocated[d]+' pts' : '';
-      sh += '<div class="stat"><div class="row"><div class="nm"><span class="chip" style="background:'+DIM[d].hex+'"></span>'+DIM[d].label+note+'</div><div class="lv">Lv '+li.level+'</div></div>'
+      var streakChip = streak>0 ? '<span class="dstreak" title="'+streak+'-day streak">🔥 '+streak+'</span>' : '';
+      sh += '<div class="stat"><div class="row"><div class="nm"><span class="chip" style="background:'+DIM[d].hex+'"></span>'+DIM[d].label+note+'</div><div class="lv">'+streakChip+'Lv '+li.level+'</div></div>'
           + '<div class="bar" style="margin-top:7px"><i style="width:'+li.pct+'%;background:'+DIM[d].hex+'"></i></div>'
           + '<div class="reps">'+rt+' today · '+st.dims[d]+' XP'+alloc+'</div></div>';
     });
@@ -580,6 +788,160 @@
     $("suggest").innerHTML = cand ? ('Lagging: <b style="color:'+DIM[low].hex+'">'+DIM[low].label+'</b> — try "<b>'+cand.name+'</b>"') : "";
 
     renderWhoop();
+    renderHydration();
+    renderBody();
+    renderRating();
+    renderPulse();
+    renderHexagon();
+    renderSpark();
+    renderAchievements();
+    renderRecovery();
+  }
+
+  // ---- rating trend sparkline ----
+  function renderSpark(){
+    var svg = $("ratingSpark"); if(!svg) return;
+    var tr = G.ratingTrend(st, 14, now());
+    var W=300, H=42, pad=4;
+    var vals = tr.map(function(p){ return p.rating; });
+    var max = Math.max.apply(null, vals.concat([1])), min = Math.min.apply(null, vals.concat([0])), span=(max-min)||1;
+    function X(i){ return pad + (W-2*pad)*(tr.length<=1?1:(i/(tr.length-1))); }
+    function Y(v){ return H-pad - (H-2*pad)*((v-min)/span); }
+    var pts = tr.map(function(p,i){ return X(i).toFixed(1)+','+Y(p.rating).toFixed(1); });
+    var lastX=X(tr.length-1).toFixed(1), lastY=Y(tr[tr.length-1].rating).toFixed(1);
+    svg.innerHTML = '<path class="sparkarea" d="M'+X(0).toFixed(1)+','+(H-pad)+' L'+pts.join(' L')+' L'+lastX+','+(H-pad)+' Z"/>'
+      + '<path class="sparkline" d="M'+pts.join(' L')+'"/>'
+      + '<circle class="sparkdot" cx="'+lastX+'" cy="'+lastY+'" r="3.2"/>';
+  }
+
+  // ---- 🏅 achievements ----
+  function renderAchievements(){
+    var list = G.achievements(st, now());
+    var got = list.filter(function(a){ return a.unlocked; }).length;
+    $("achMeta").textContent = got + " / " + list.length;
+    $("achGrid").innerHTML = list.map(function(a){
+      var prog = a.unlocked ? '' : '<div class="ap"><i style="width:'+Math.round(a.progress*100)+'%"></i></div>';
+      return '<div class="ach'+(a.unlocked?' on':'')+'" title="'+esc(a.desc)+(a.unlocked?'':' ('+Math.round(a.progress*100)+'%)')+'"><div class="ai">'+a.icon+'</div><div class="an">'+esc(a.name)+'</div>'+prog+'</div>';
+    }).join("");
+  }
+
+  // ---- 🌙 recovery-day banner ----
+  function renderRecovery(){
+    var el = $("recoveryDay"); if(!el) return;
+    if(G.physicalWaived(st, today())){
+      var rec = (st.whoop && st.whoop.recovery!=null) ? Math.round(st.whoop.recovery) : null;
+      el.style.display = "";
+      el.innerHTML = '🌙 <b>Recovery day'+(rec!=null?(' — '+rec+'%'):'')+'.</b> Your body is in the red, so the Physical rep is <b>waived</b> today — rest counts. Clear the other five and you\'re good.';
+    } else el.style.display = "none";
+  }
+
+  // ---- ⚡ Power Rating — the culmination number ----
+  function renderRating(){
+    var pr = G.powerRating(st, now()), tier = G.powerTier(pr), gain = G.powerGain(st, 7, now());
+    $("ratingNum").textContent = pr.toLocaleString();
+    $("ratingTier").textContent = tier.name;
+    $("ratingTrend").innerHTML = gain > 0 ? ('▲ <b>+' + gain.toLocaleString() + '</b> this week') : 'log a rep to grow';
+    $("ratingNext").textContent = tier.next ? (tier.next + ' at ' + tier.nextAt.toLocaleString()) : 'Max tier reached';
+    $("tierBar").style.width = tier.pct + '%';
+  }
+
+  // ---- 📊 Weekly Pulse ----
+  function renderPulse(){
+    var wp = G.weeklyPulse(st, now());
+    var tiles = [
+      ['+' + wp.powerGain.toLocaleString(), 'power'],
+      [String(wp.reps), 'reps'],
+      [wp.activeDays + '/7', 'active days'],
+      ['$' + wp.sales.toLocaleString(), 'sales'],
+      [wp.topDim ? DIM[wp.topDim].label : '—', 'top focus'],
+      [wp.bestStreak > 0 ? ('🔥' + wp.bestStreak) : '—', 'best streak'],
+    ];
+    $("pulseGrid").innerHTML = tiles.map(function(t){
+      return '<div class="pulsetile"><div class="pv">' + esc(String(t[0])) + '</div><div class="pl">' + esc(t[1]) + '</div></div>';
+    }).join('');
+  }
+
+  // ---- ◇ Stat Hexagon (radar across the six dimensions) ----
+  function renderHexagon(){
+    var svg = $("hexSvg"); if(!svg) return;
+    var cx=110, cy=96, R=66, N=6, dims=G.DIMENSIONS;
+    var levels = dims.map(function(d){ return G.levelFromXp(st.dims[d]).level; });
+    var maxL = Math.max.apply(null, levels.concat([1]));
+    function pt(i, r){ var a=-Math.PI/2 + i*(Math.PI*2/N); return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
+    var parts = [];
+    [0.25,0.5,0.75,1].forEach(function(f){
+      parts.push('<polygon class="hexgrid" points="'+dims.map(function(_,i){ return pt(i,R*f).map(function(n){return n.toFixed(1);}).join(','); }).join(' ')+'"/>');
+    });
+    dims.forEach(function(d,i){
+      var e=pt(i,R), lbl=pt(i,R+15);
+      parts.push('<line class="hexaxis" x1="'+cx+'" y1="'+cy+'" x2="'+e[0].toFixed(1)+'" y2="'+e[1].toFixed(1)+'"/>');
+      var anchor = Math.abs(lbl[0]-cx)<6?'middle':(lbl[0]>cx?'start':'end');
+      parts.push('<text class="hexlbl" x="'+lbl[0].toFixed(1)+'" y="'+(lbl[1]+3).toFixed(1)+'" text-anchor="'+anchor+'" fill="'+DIM[d].hex+'">'+esc(DIM[d].label.slice(0,3).toUpperCase())+'</text>');
+    });
+    parts.push('<polygon class="hexpoly" points="'+dims.map(function(d,i){ return pt(i,R*(levels[i]/maxL)).map(function(n){return n.toFixed(1);}).join(','); }).join(' ')+'"/>');
+    dims.forEach(function(d,i){ var p=pt(i,R*(levels[i]/maxL)); parts.push('<circle class="hexdot" cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="3.5" fill="'+DIM[d].hex+'"/>'); });
+    svg.innerHTML = parts.join('');
+  }
+
+  // ---- body diagram: which parts are powering up today ----
+  var BODYPART = {
+    mental:    { part: "Mind" },
+    spiritual: { part: "Heart" },
+    physical:  { part: "Core" },
+    family:    { part: "Left arm" },
+    social:    { part: "Right arm" },
+    financial: { part: "Legs" },
+  };
+  function renderBody(){
+    var td = today();
+    G.DIMENSIONS.forEach(function(d){
+      var el = document.querySelector('#bodySvg .bp[data-dim="'+d+'"]');
+      if(el){
+        var active = !!(st.history[td] && st.history[td][d] > 0);
+        el.style.color = DIM[d].hex;            // CSS currentColor drives fill + glow
+        el.style.fill = DIM[d].hex;
+        el.style.stroke = DIM[d].hex;
+        el.style.fillOpacity = active ? 0.92 : 0.14;
+        el.style.strokeOpacity = active ? 0.95 : 0.30;
+        el.style.filter = active ? ('drop-shadow(0 0 7px '+DIM[d].hex+')') : 'none';
+        el.onclick = openSheet;                 // tap a body part -> log a rep
+      }
+    });
+    $("bodyLegend").innerHTML = G.DIMENSIONS.map(function(d){
+      var active = !!(st.history[td] && st.history[td][d] > 0);
+      var streak = G.dimStreak(st, d, now());
+      return '<div class="blgd'+(active?" on":"")+'" style="--c:'+DIM[d].hex+'">'
+           + '<span class="bdot"></span>'+DIM[d].label
+           + (streak>0?' <span style="color:#ffb454">🔥'+streak+'</span>':'')
+           + '<span class="bpart">'+BODYPART[d].part+'</span></div>';
+    }).join("");
+  }
+
+  // ---- hydration: fill the daily tank ----
+  function renderHydration(){
+    var hs = G.hydrationStatus(st, now());
+    $("hydroMeta").textContent = hs.oz + " / " + hs.goalOz + " oz";
+    var fill = $("hydroFill");
+    fill.style.width = hs.pct + "%";
+    fill.className = "hydrofill" + (hs.met ? " full" : "");
+    $("hydroOz").textContent = hs.oz + " oz";
+    $("hydroPct").textContent = hs.pct + "%";
+    $("hydroLeft").innerHTML = hs.met
+      ? '<span class="met">✓ Goal hit — keep sipping 💧</span>'
+      : (hs.remaining + " oz to go today");
+    $("hydroStreak").textContent = hs.streak > 0 ? ("🔥 " + hs.streak + "-day streak") : "";
+    var p = st.profile || {};
+    $("hydroCap").textContent = "🎯 " + hs.goalOz + " oz/day — sized to your build (" + (p.weightLb || "?") + " lb · " + (p.activityTier || "active") + ") + WHOOP training load";
+    var box = $("hydroBtns");
+    if(!box.dataset.built){          // build the quick-add buttons once, then just rebind on each render is unnecessary
+      box.dataset.built = "1";
+      box.innerHTML = G.HYDRATION_PRESETS.map(function(p){
+        return '<button class="hydrobtn" data-oz="'+p.oz+'">'+(p.icon||"💧")+" "+esc(p.label)+'<span class="oz">+'+p.oz+' oz</span></button>';
+      }).join("");
+      Array.prototype.forEach.call(box.querySelectorAll("[data-oz]"), function(btn){
+        btn.onclick = function(){ apply(function(){ return G.addWater(st, +btn.getAttribute("data-oz"), now()); }); };
+      });
+    }
   }
 
   // ---- WHOOP vitals readout ----
@@ -754,6 +1116,57 @@
   $("getRep").onclick = openSheet;
   $("scrim").onclick = closeSheet;
   $("resetBtn").onclick = function(){ if(confirm("Reset the System? This wipes all progress.")){ var fresh = G.newState("Lawrence Whitaker", now()); fresh.epoch = (st && st.epoch ? st.epoch : 0) + 1; st = fresh; save(); render(); } };  // bump epoch so the reset wins the cloud merge (doesn't get undone)
+
+  // ---- ⤴ shareable System card (canvas -> Web Share / download) ----
+  var DIMH = { physical:"#ff8a4c", mental:"#a78bfa", spiritual:"#ffd76a", family:"#ff6fae", social:"#56c2ff", financial:"#3fe0a0" };
+  function drawShareHexagon(ctx, cx, cy, R){
+    var dims=G.DIMENSIONS, N=6;
+    var levels=dims.map(function(d){ return G.levelFromXp(st.dims[d]).level; });
+    var maxL=Math.max.apply(null, levels.concat([1]));
+    function pt(i,r){ var a=-Math.PI/2+i*(Math.PI*2/N); return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; }
+    ctx.lineWidth=2; ctx.strokeStyle="rgba(95,224,255,0.18)";
+    [0.25,0.5,0.75,1].forEach(function(f){ ctx.beginPath(); dims.forEach(function(_,i){ var p=pt(i,R*f); i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]); }); ctx.closePath(); ctx.stroke(); });
+    ctx.font="600 24px ui-monospace,Menlo,monospace"; ctx.textAlign="center";
+    dims.forEach(function(d,i){ var e=pt(i,R), l=pt(i,R+40); ctx.strokeStyle="rgba(95,224,255,0.12)"; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(e[0],e[1]); ctx.stroke(); ctx.fillStyle=DIMH[d]; ctx.fillText(d.slice(0,3).toUpperCase(), l[0], l[1]+8); });
+    ctx.beginPath(); dims.forEach(function(d,i){ var p=pt(i,R*(levels[i]/maxL)); i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]); }); ctx.closePath();
+    ctx.fillStyle="rgba(95,224,255,0.18)"; ctx.fill(); ctx.lineWidth=4; ctx.strokeStyle="#5fe0ff"; ctx.stroke();
+    dims.forEach(function(d,i){ var p=pt(i,R*(levels[i]/maxL)); ctx.beginPath(); ctx.arc(p[0],p[1],8,0,Math.PI*2); ctx.fillStyle=DIMH[d]; ctx.fill(); });
+  }
+  function buildShareCard(cb){
+    var c=$("shareCanvas"); if(!c||!c.getContext){ cb(null); return; }
+    var ctx=c.getContext("2d"), W=c.width, H=c.height;
+    var g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,"#0c1730"); g.addColorStop(1,"#05070e");
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle="rgba(95,224,255,0.45)"; ctx.lineWidth=4; ctx.strokeRect(26,26,W-52,H-52);
+    ctx.textAlign="center";
+    ctx.fillStyle="#5fe0ff"; ctx.font="600 42px ui-monospace,Menlo,monospace"; ctx.fillText("⚡ THE SYSTEM", W/2, 118);
+    ctx.fillStyle="#e6f4ff"; ctx.font="700 66px -apple-system,Helvetica,Arial,sans-serif"; ctx.fillText(st.player.name, W/2, 198);
+    var pr=G.powerRating(st,now()), tier=G.powerTier(pr);
+    ctx.fillStyle="#7d9bbd"; ctx.font="500 30px ui-monospace,monospace"; ctx.fillText("POWER RATING", W/2, 292);
+    ctx.fillStyle="#5fe0ff"; ctx.font="700 168px ui-monospace,monospace"; ctx.fillText(pr.toLocaleString(), W/2, 452);
+    ctx.fillStyle="#ffd76a"; ctx.font="600 42px ui-monospace,monospace"; ctx.fillText(tier.name.toUpperCase()+"  ·  RANK "+G.rank(st), W/2, 524);
+    drawShareHexagon(ctx, W/2, 790, 200);
+    var wp=G.weeklyPulse(st,now());
+    ctx.fillStyle="#7d9bbd"; ctx.font="500 30px ui-monospace,monospace"; ctx.fillText("Lv "+G.playerLevel(st)+"   ·   "+G.repsTotal(st)+" reps   ·   "+wp.bestStreak+"d best streak", W/2, 1124);
+    ctx.fillStyle="#3fe0a0"; ctx.font="600 34px ui-monospace,monospace"; ctx.fillText("🌱 $"+G.recentSalesTotal(st,7,now()).toLocaleString()+" Vybrance sales this week", W/2, 1186);
+    ctx.fillStyle="#46607e"; ctx.font="500 24px ui-monospace,monospace"; ctx.fillText("protagonist-db3fd.firebaseapp.com", W/2, 1288);
+    try{ c.toBlob(cb, "image/png"); }catch(e){ cb(null); }
+  }
+  $("shareBtn").onclick = function(){
+    buildShareCard(function(blob){
+      if(!blob){ try{ alert("Couldn't build the card on this device."); }catch(e){} return; }
+      try{
+        var file = new File([blob], "protagonist-system.png", { type:"image/png" });
+        if(navigator.canShare && navigator.canShare({ files:[file] })){
+          navigator.share({ files:[file], title:"The System", text:"My Power Rating ⚡" }).catch(function(){});
+          return;
+        }
+      }catch(e){}
+      var url=URL.createObjectURL(blob), a=document.createElement("a");
+      a.href=url; a.download="protagonist-system.png"; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+    });
+  };
 
   // day rolled over while the app was open -> reconcile so penalties/streaks update (not just the UI)
   function reconcileNow(){

@@ -1,0 +1,40 @@
+name: amazon-daily
+# Pulls the single-DAY Vybrance Amazon "Ordered product sales" via SP-API and credits it as a deduped
+# seed (with XP) into the user's PRIVATE Firestore game state. Runs in GitHub's cloud (no Mac needed).
+# Until SP-API creds are seeded into Firestore _feed/amazon, the job is a GREEN no-op (skips gracefully).
+#
+# Cron is UTC. 04:50 UTC == 11:50 PM CDT (America/Chicago, summer) / 10:50 PM CST (winter). GitHub cron is
+# best-effort; amazon-daily.js attributes to the Central day that is ENDING (now-2h), so a little lag past
+# midnight still credits the correct day. Creds: FEED_CREDS.firebase_refresh_token (owner) + PROTAG_UID;
+# the SP-API refresh_token/client_id/client_secret live in Firestore _feed/amazon (read via the owner token).
+on:
+  schedule:
+    - cron: "50 4 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: amazon-daily
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Materialize the owner Firebase login from FEED_CREDS
+        env:
+          FEED_CREDS: ${{ secrets.FEED_CREDS }}
+        run: |
+          mkdir -p "$HOME/.config/configstore"
+          node -e '
+            const c = JSON.parse(process.env.FEED_CREDS);
+            const fs = require("fs"), os = require("os"), p = require("path");
+            fs.writeFileSync(p.join(os.homedir(), ".config/configstore/firebase-tools.json"), JSON.stringify({ tokens: { refresh_token: c.firebase_refresh_token } }));
+          '
+      - name: Pull Amazon daily sales (SP-API) -> Firestore
+        env:
+          PROTAG_UID: ${{ secrets.PROTAG_UID }}
+        run: node amazon-daily.js --spapi

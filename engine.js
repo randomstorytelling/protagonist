@@ -26,19 +26,28 @@
     multiplier: { base: 1.0, perEngineDim: 0.15, max: 1.6 }, // 1.0 .. 1.6 (cap reached at 4 of 5 health dims)
     xpCurve: { baseNeed: 100, growth: 1.25 },               // need(L)=100*1.25^(L-1)
     statPointsPerLevel: 3,
+    // rank ladder = One Piece notoriety, ascending pirate power (keyed to player level)
     ranks: [
-      { rank: "E", minLevel: 1 },
-      { rank: "D", minLevel: 5 },
-      { rank: "C", minLevel: 10 },
-      { rank: "B", minLevel: 18 },
-      { rank: "A", minLevel: 28 },
-      { rank: "S", minLevel: 42 },
-      { rank: "National Level", minLevel: 60 },
+      { rank: "Rookie", minLevel: 1 },
+      { rank: "Supernova", minLevel: 5 },
+      { rank: "Warlord", minLevel: 10 },
+      { rank: "Commander", minLevel: 18 },
+      { rank: "Yonko", minLevel: 28 },
+      { rank: "Pirate King", minLevel: 42 },
+      { rank: "Joy Boy", minLevel: 60 },
     ],
     dailyQuest: { requirements: { physical: 1, mental: 1, spiritual: 1, family: 1, social: 1, financial: 1 }, reward: 50 },
     penalty: { multiplierCap: 1.0 }, // while penalized: NO amplification and NO bonuses on income
     statBonus: { financialPctPerPoint: 0.5, cap: 25 }, // allocated financial points => income bonus %
     titleBonusCap: 40,
+    // daily water target (oz) — "fill the bar every day". The goal is PERSONALIZED from the player's build +
+    // activity tier via hydrationGoalOz(); this is the fallback when no profile is set. Basis (peer-reviewed):
+    //  - NASEM/IOM 2004 DRI: adult-male Adequate Intake 3.7 L total water (~101 oz from beverages) for a
+    //    SEDENTARY ~70 kg reference man — explicitly higher for larger/very-active people.
+    //  - Yamada et al., Science 2022 (n=5604, doubly-labeled water): physical activity + athletic status are
+    //    the LARGEST drivers of water turnover, which scales with body size.
+    //  - ~35 mL/kg/day is the common active-adult clinical estimate; + ACSM sweat-replacement for training.
+    hydration: { goalOz: 125, mlPerKg: { sedentary: 31, active: 35, athlete: 40 }, activityAllowanceOz: { sedentary: 0, active: 13, athlete: 26 } },
   };
 
   var REPS = [
@@ -89,6 +98,14 @@
   ];
   var RECURRING_BY_ID = {};
   RECURRING.forEach(function (r) { RECURRING_BY_ID[r.id] = r; });
+
+  // hydration quick-add presets (oz). Tapping one fills the daily bar; the goal lives in CONFIG.hydration.
+  var HYDRATION_PRESETS = [
+    { label: "Glass", oz: 8, icon: "🥛" },
+    { label: "Bottle", oz: 16, icon: "🍶" },
+    { label: "Big", oz: 24, icon: "🧴" },
+    { label: "Liter", oz: 32, icon: "💧" },
+  ];
 
   // smart activity categories — free text gets matched to one of these, which rolls into a dimension.
   // (on-device classifier; swappable for an LLM call behind the same classifyActivity() interface.)
@@ -209,14 +226,29 @@
     }
     return n;
   }
+  // on a WHOOP-RED recovery day, resting IS the right physical move — so the Daily Quest waives the physical
+  // requirement for that day. Gated to TODAY's snapshot (snapshot date === the day checked), so it never
+  // retroactively excuses a past miss or lingers on a stale red reading.
+  function physicalWaived(s, day) {
+    if (!s || !s.whoop || s.whoop.recovery == null || num(s.whoop.recovery, 100) >= 34) return false;
+    var wd = dayIndexFromYMD(s.whoop.date);
+    return Number.isFinite(wd) && wd === day;
+  }
+  function reqMetForDim(s, day, d, have, need) {
+    if (have >= need) return true;
+    return d === "physical" && physicalWaived(s, day);
+  }
   function isDailyMet(s, day) {
     var h = repsOn(s, day), req = CONFIG.dailyQuest.requirements;
-    for (var d = 0; d < DIMENSIONS.length; d++) if ((h[DIMENSIONS[d]] || 0) < (req[DIMENSIONS[d]] || 0)) return false;
+    for (var d = 0; d < DIMENSIONS.length; d++) {
+      var dim = DIMENSIONS[d];
+      if (!reqMetForDim(s, day, dim, (h[dim] || 0), (req[dim] || 0))) return false;
+    }
     return true;
   }
   function dailyProgress(s, day) {
     var h = repsOn(s, day), req = CONFIG.dailyQuest.requirements, done = 0, total = 0;
-    DIMENSIONS.forEach(function (d) { total++; if ((h[d] || 0) >= (req[d] || 0)) done++; });
+    DIMENSIONS.forEach(function (d) { total++; if (reqMetForDim(s, day, d, (h[d] || 0), (req[d] || 0))) done++; });
     return { done: done, total: total, met: done === total };
   }
   function suggestionDim(s, day) {
@@ -255,6 +287,10 @@
       recurring: {},              // recurringId -> lastDoneDay
       external: { seen: {} },     // "source:kind:id" -> dayIngested (dedup for WHOOP etc.)
       whoop: null,                // latest WHOOP vitals snapshot (display only; XP lives in history)
+      hydration: { day: today, oz: 0, metDays: [] }, // today's water intake (oz) + goal-met day indices (for the streak); resets daily
+      // build + activity tier drive the personalized hydration goal (and future calorie/effort sizing).
+      // WHOOP-derived: 25-day avg day-strain ~10 with frequent 15+ days (basketball, lifting, hikes) => "active".
+      profile: { heightIn: 77, weightLb: 208, activityTier: "active" },
     };
   }
 
@@ -329,6 +365,21 @@
         hrv: num(s.whoop.hrv, null),
         rhr: num(s.whoop.rhr, null),
         syncedTs: num(s.whoop.syncedTs, null),
+      };
+    }
+    if (s.hydration && typeof s.hydration === "object") {
+      var md = Array.isArray(s.hydration.metDays) ? s.hydration.metDays : [];
+      var seenMd = {}, mdU = [];
+      md.forEach(function (x) { var n = num(x, null); if (n === null) return; n = Math.floor(n); if (n > today + 1 || seenMd[n]) return; seenMd[n] = 1; mdU.push(n); });
+      mdU.sort(function (a, b) { return a - b; });
+      if (mdU.length > 120) mdU = mdU.slice(mdU.length - 120);
+      out.hydration = { day: Math.min(num(s.hydration.day, today), today), oz: nonNeg(s.hydration.oz), metDays: mdU };
+    }
+    if (s.profile && typeof s.profile === "object") {
+      out.profile = {
+        heightIn: nonNeg(num(s.profile.heightIn, out.profile.heightIn)),
+        weightLb: nonNeg(num(s.profile.weightLb, out.profile.weightLb)),
+        activityTier: (["sedentary", "active", "athlete"].indexOf(s.profile.activityTier) !== -1) ? s.profile.activityTier : out.profile.activityTier,
       };
     }
     out.version = SCHEMA_VERSION;
@@ -472,7 +523,10 @@
     // aggregates are reconstructed from it — the log is the per-rep ledger that survives a merge intact.
     var seenLog = {}, log = [];
     (A.log || []).concat(B.log || []).forEach(function (e) {
-      if (!e) return; var key = num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0);
+      if (!e) return;
+      // dedup external/deduped reps by their stable extKey (same event on two devices -> ONE entry, so the
+      // aggregate reconstruction can't double-count); fall back to the ts-shape key for manual reps.
+      var key = e.extKey ? ("x|" + e.extKey) : (num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0));
       if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
     });
     log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
@@ -545,6 +599,18 @@
     out.lastActiveDay = Math.max(A.lastActiveDay, B.lastActiveDay);
     out.whoop = mergeWhoop(A.whoop, B.whoop);
 
+    // hydration: same day -> MAX oz (you can't un-drink water; conflict-free, never inflates); else the later day.
+    // The goal-completion REP carries an extKey ("hydration:hydration_goal:hydr-<day>"), so the log-union above
+    // collapses two devices' same-day goal hits to ONE entry -> the aggregate rebuild credits it exactly once.
+    var ah = A.hydration || { day: 0, oz: 0, metDays: [] }, bh = B.hydration || { day: 0, oz: 0, metDays: [] };
+    var mdSet = {};
+    (ah.metDays || []).concat(bh.metDays || []).forEach(function (x) { var n = num(x, null); if (n !== null) mdSet[Math.floor(n)] = 1; });
+    var mdMerged = Object.keys(mdSet).map(Number).filter(Number.isFinite).sort(function (a, b) { return a - b; });
+    if (mdMerged.length > 120) mdMerged = mdMerged.slice(mdMerged.length - 120);   // bound the met-days history
+    out.hydration = (ah.day === bh.day)
+      ? { day: ah.day, oz: Math.max(nonNeg(ah.oz), nonNeg(bh.oz)), metDays: mdMerged }
+      : (ah.day > bh.day ? { day: ah.day, oz: nonNeg(ah.oz), metDays: mdMerged } : { day: bh.day, oz: nonNeg(bh.oz), metDays: mdMerged });
+
     // daily: same day -> completed if EITHER did; else the later day's record
     if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed) };
     else out.daily = (A.daily.day > B.daily.day) ? { day: A.daily.day, completed: A.daily.completed } : { day: B.daily.day, completed: B.daily.completed };
@@ -585,7 +651,10 @@
     recomputeStreak(s, today);
 
     var ts = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
-    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual" });
+    // extKey = the source's dedup identity (set by ingestExternal). It lets mergeStates collapse two
+    // independent offline credits of the SAME external event (same id, different wall-clock ts) into ONE
+    // log entry before aggregates are reconstructed — without it the ts-keyed union double-counts them.
+    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual", extKey: rep.extKey || null, amount: (rep.amount != null ? num(rep.amount, 0) : null) });
     if (s.log.length > 200) s.log.length = 200;
     s.lastActiveDay = today;
 
@@ -647,6 +716,225 @@
       var daysUntil = (last === null) ? 0 : Math.max(0, def.intervalDays - (today - last));
       return { id: def.id, name: def.name, dim: def.dim, xp: def.xp, intervalDays: def.intervalDays, lastDoneDay: last, due: due, daysUntilDue: daysUntil };
     });
+  }
+
+  // consecutive days (ending today, or yesterday if today isn't logged yet) with >=1 rep in `dim` — the
+  // per-dimension analogue of the global streak, derived from history so it can't be faked. Anchored on the
+  // monotonic game-day. Drives the Stats panel's per-category streak chips.
+  function dimStreak(state, dim, now) {
+    if (!state || DIMENSIONS.indexOf(dim) === -1) return 0;
+    var today = effectiveDay(state, now);
+    var h = state.history || {};
+    function did(d) { var x = h[d]; return !!(x && (x[dim] || 0) > 0); }
+    var day = did(today) ? today : (did(today - 1) ? today - 1 : null);
+    if (day === null) return 0;
+    var n = 0;
+    while (did(day)) { n++; day--; }
+    return n;
+  }
+
+  // total $ of Vybrance sales credited in the last `days` (default 7), summed from the log's sale entries.
+  // Drives the "your level grows with your last-7-day sales" readout. Pure.
+  function recentSalesTotal(state, days, now) {
+    var today = effectiveDay(state, now);
+    var since = today - (Math.max(1, num(days, 7)) - 1);
+    var log = (state && state.log) || [];
+    var sum = 0;
+    log.forEach(function (e) {
+      if (!e || e.dim !== "financial" || e.amount == null) return;
+      if (num(e.day, -1) >= since) sum += nonNeg(e.amount);
+    });
+    return Math.round(sum);
+  }
+
+  // ============================ POWER RATING — the culmination of all activities ============================
+  // One headline number that sums you up (à la WHOOP Age): total progress + earning power + big wins, scaled
+  // by CONSISTENCY (your live streaks) and VITALITY (WHOOP recovery). Deterministic & pure; it can dip if
+  // streaks break or recovery tanks, so it stays honest rather than only ratcheting up.
+  function powerRating(state, now) {
+    if (!state || typeof state !== "object") return 0;
+    var core = nonNeg(state.totalXp);                 // everything you've ever logged
+    var earn = 1.5 * nonNeg(state.incomeXp);          // earning power, weighted (it's the main quest)
+    var wins = 50 * nonNeg(state.bigWins);            // big wins punch above their XP
+    var streaks = 0;
+    DIMENSIONS.forEach(function (d) { streaks += dimStreak(state, d, now); });
+    var consistency = 1 + 0.01 * Math.min(streaks, 60);          // keeping every streak alive => up to +60%
+    var rec = (state.whoop && state.whoop.recovery != null) ? clamp(num(state.whoop.recovery, 70), 0, 100) : 70;
+    var vitality = 0.80 + 0.20 * (rec / 100);                    // 0.80–1.00 — your body's readiness nudges your power
+    return Math.round((core + earn + wins) * consistency * vitality);
+  }
+  // power stages = Luffy's gears (One Piece): the Power Rating tier you're in == the gear you've unlocked.
+  var POWER_TIERS = [
+    { min: 0, name: "Base Form" }, { min: 600, name: "Gear 2" }, { min: 1800, name: "Gear 3" },
+    { min: 4500, name: "Gear 4" }, { min: 11000, name: "Gear 5" }, { min: 28000, name: "Sun God Nika" },
+  ];
+  function powerTier(rating) {
+    var r = POWER_TIERS[0], idx = 0;
+    for (var i = 0; i < POWER_TIERS.length; i++) if (rating >= POWER_TIERS[i].min) { r = POWER_TIERS[i]; idx = i; }
+    var next = POWER_TIERS[idx + 1] || null;
+    var prevMin = r.min, span = next ? (next.min - prevMin) : 1;
+    return { name: r.name, min: prevMin, next: next ? next.name : null, nextAt: next ? next.min : null,
+             pct: next ? clamp(Math.round(((rating - prevMin) / span) * 100), 0, 100) : 100 };
+  }
+  // "power banked" in the last `days` — the weekly trend (base activity from the log, +0.5x extra for income reps).
+  function powerGain(state, days, now) {
+    var today = effectiveDay(state, now);
+    var since = today - (Math.max(1, num(days, 7)) - 1);
+    var log = (state && state.log) || [];
+    var g = 0;
+    log.forEach(function (e) {
+      if (!e || num(e.day, -1) < since) return;
+      g += nonNeg(e.baseXp != null ? e.baseXp : e.xp);
+      if (e.dim === "financial") g += 0.5 * nonNeg(e.xp);
+    });
+    return Math.round(g);
+  }
+  // 7-day rollup for the Weekly Pulse card (reps, XP, active days, top dimension, sales, best live streak). Pure.
+  function weeklyPulse(state, now) {
+    var today = effectiveDay(state, now), since = today - 6;
+    var log = (state && state.log) || [];
+    var reps = 0, xp = 0, byDim = emptyDay(), days = {};
+    log.forEach(function (e) {
+      if (!e || num(e.day, -1) < since) return;
+      reps += 1; xp += nonNeg(e.baseXp != null ? e.baseXp : e.xp);
+      if (DIMENSIONS.indexOf(e.dim) !== -1) byDim[e.dim] += 1;
+      days[num(e.day, -1)] = 1;
+    });
+    var top = DIMENSIONS[0];
+    DIMENSIONS.forEach(function (d) { if (byDim[d] > byDim[top]) top = d; });
+    var bestStreak = 0, bestDim = null;
+    DIMENSIONS.forEach(function (d) { var s = dimStreak(state, d, now); if (s > bestStreak) { bestStreak = s; bestDim = d; } });
+    return {
+      reps: reps, xp: Math.round(xp), activeDays: Object.keys(days).length,
+      topDim: (byDim[top] > 0 ? top : null), sales: recentSalesTotal(state, 7, now),
+      bestStreak: bestStreak, bestStreakDim: bestDim, powerGain: powerGain(state, 7, now),
+    };
+  }
+
+  function dayHasAllDims(state) {
+    var h = state && state.history; if (!h) return false;
+    for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) {
+      var day = h[k], all = true;
+      for (var i = 0; i < DIMENSIONS.length; i++) if (!(day && (day[DIMENSIONS[i]] || 0) > 0)) { all = false; break; }
+      if (all) return true;
+    }
+    return false;
+  }
+  // derived milestone badges (no persisted state — recomputed from the save). progress is 0..1 toward unlock.
+  function achievements(state, now) {
+    var s = state || {};
+    var reps = repsTotal(s), longest = (s.streak && s.streak.longest) || 0, big = nonNeg(s.bigWins);
+    var metDays = (s.hydration && Array.isArray(s.hydration.metDays)) ? s.hydration.metDays.length : 0;
+    var sales = recentSalesTotal(s, 7, now), rating = powerRating(s, now), lvl = playerLevel(s);
+    var allSix = dayHasAllDims(s);
+    function A(id, name, icon, desc, ok, prog) { return { id: id, name: name, icon: icon, desc: desc, unlocked: !!ok, progress: clamp(prog, 0, 1) }; }
+    return [
+      A("first", "First Blood", "⚔️", "Log your first rep", reps >= 1, reps / 1),
+      A("ten", "Warming Up", "🔁", "Log 10 reps", reps >= 10, reps / 10),
+      A("century", "Centurion", "💯", "Log 100 reps", reps >= 100, reps / 100),
+      A("hydrate1", "Hydrated", "💧", "Hit your daily water goal", metDays >= 1, metDays / 1),
+      A("hydrate7", "Water Sage", "🌊", "Hit your water goal 7 days", metDays >= 7, metDays / 7),
+      A("allsix", "Renaissance", "🎯", "Train all six dimensions in one day", allSix, allSix ? 1 : 0),
+      A("bigwin", "The Closer", "🏆", "Land your first big win", big >= 1, big / 1),
+      A("rain", "Rainmaker", "🌧️", "$250+ Vybrance sales in 7 days", sales >= 250, sales / 250),
+      A("streak7", "Iron Will", "🔥", "Reach a 7-day streak", longest >= 7, longest / 7),
+      A("streak30", "Unbroken", "⛓️", "Reach a 30-day streak", longest >= 30, longest / 30),
+      A("rising", "Gear 3", "👊", "Reach Power Rating 1,800 (Gear 3)", rating >= 1800, rating / 1800),
+      A("gear5", "Gear 5", "☀️", "Reach Power Rating 11,000 (Gear 5)", rating >= 11000, rating / 11000),
+      A("monarch", "Shadow Monarch", "👑", "Reach Level 20", lvl >= 20, lvl / 20),
+    ];
+  }
+  // reconstruct a Power Rating trend for the last `days` from the per-rep log (the recent ledger), so the
+  // cumulative shape is exact for logged days; progress older than the log sits at a flat floor. The series is
+  // scaled so its final point equals the live powerRating (endpoint-accurate). Pure.
+  function ratingTrend(state, days, now) {
+    var s = state || {};
+    var today = effectiveDay(s, now), n = Math.max(2, num(days, 14)), since = today - (n - 1);
+    var log = (s.log || []);
+    var sumBase = 0, sumIncome = 0;
+    log.forEach(function (e) { if (!e) return; sumBase += nonNeg(e.baseXp != null ? e.baseXp : e.xp); if (e.dim === "financial") sumIncome += nonNeg(e.xp); });
+    var floorTotal = Math.max(0, nonNeg(s.totalXp) - sumBase), floorIncome = Math.max(0, nonNeg(s.incomeXp) - sumIncome);
+    var rawToday = nonNeg(s.totalXp) + 1.5 * nonNeg(s.incomeXp), live = powerRating(s, now);
+    var scale = rawToday > 0 ? (live / rawToday) : 1;
+    var series = [];
+    for (var d = since; d <= today; d++) {
+      var ct = floorTotal, ci = floorIncome;
+      log.forEach(function (e) { if (!e || num(e.day, Infinity) > d) return; ct += nonNeg(e.baseXp != null ? e.baseXp : e.xp); if (e.dim === "financial") ci += nonNeg(e.xp); });
+      series.push({ day: d, rating: Math.round((ct + 1.5 * ci) * scale) });
+    }
+    return series;
+  }
+
+  // ---- hydration: a daily "fill the bar" water tracker ----------------------------------------------
+  // today's logged oz (0 if the stored day isn't today — the bar resets every day).
+  function hydrationOz(state, today) {
+    var h = state && state.hydration; if (!h) return 0;
+    return (num(h.day, today) === today) ? nonNeg(h.oz) : 0;
+  }
+  // consecutive days (ending today, or yesterday if today isn't done yet) whose goal was met. Derived from
+  // hydration.metDays — a dedicated bounded set that is union-merged across devices — so it can't be truncated
+  // by the external.seen prune bound, faked by a single counter, or polluted by malformed keys. Anchored on
+  // effectiveDay (the monotonic game-day) so it matches the day addWater writes met-days at.
+  function hydrationStreak(state, now) {
+    var today = effectiveDay(state, now);
+    var md = (state && state.hydration && Array.isArray(state.hydration.metDays)) ? state.hydration.metDays : [];
+    var done = {};
+    md.forEach(function (x) { var n = num(x, null); if (n !== null) done[Math.floor(n)] = 1; });
+    var day = done[today] ? today : (done[today - 1] ? today - 1 : null);
+    if (day === null) return 0;
+    var n = 0;
+    while (done[day]) { n++; day--; }
+    return n;
+  }
+  // PERSONALIZED daily water goal (oz) from the player's build + activity tier (see CONFIG.hydration for the
+  // peer-reviewed basis). Falls back to CONFIG.hydration.goalOz when there's no usable profile. Pure.
+  function hydrationGoalOz(state) {
+    var H = CONFIG.hydration || {};
+    var fallback = H.goalOz || 125;
+    var p = state && state.profile;
+    var lb = p ? num(p.weightLb, 0) : 0;
+    if (!(lb > 0)) return fallback;
+    var tier = (p && ["sedentary", "active", "athlete"].indexOf(p.activityTier) !== -1) ? p.activityTier : "active";
+    var mlPerKg = (H.mlPerKg && H.mlPerKg[tier]) || 35;
+    var allowance = (H.activityAllowanceOz && H.activityAllowanceOz[tier] != null) ? H.activityAllowanceOz[tier] : 13;
+    var kg = lb * 0.453592;
+    var oz = (kg * mlPerKg) / 29.5735 + allowance;   // mL -> US fl oz (29.5735 mL/oz), + training allowance
+    return clamp(Math.round(oz / 5) * 5, 64, 220);    // round to nearest 5 oz; sane human bounds
+  }
+  function hydrationStatus(state, now) {
+    var today = effectiveDay(state, now);   // read at the SAME monotonic game-day addWater writes, not safeToday
+    var goal = hydrationGoalOz(state);
+    var oz = hydrationOz(state, today);
+    return { oz: oz, goalOz: goal, pct: clamp(round((oz / goal) * 100), 0, 100), met: oz >= goal, remaining: Math.max(0, goal - oz), streak: hydrationStreak(state, now) };
+  }
+  // log water (oz) for today. Accumulates; the FIRST crossing of the daily goal credits ONE Physical rep
+  // through ingestExternal (deterministic id "hydr-<day>"), so re-logging more water or a cross-device sync
+  // can never double-credit (external.seen dedups). Pure — returns new state + events.
+  function addWater(state, oz, now) {
+    oz = Math.max(0, round(num(oz, 0)));
+    var s = clone(state);
+    if (!s || typeof s !== "object") s = newState("Lawrence", now);
+    var today = effectiveDay(s, now);
+    var goal = hydrationGoalOz(s);
+    var metDays = (s.hydration && Array.isArray(s.hydration.metDays)) ? s.hydration.metDays : [];
+    if (!s.hydration || num(s.hydration.day, today) !== today) s.hydration = { day: today, oz: 0, metDays: metDays }; // new day resets oz, KEEPS the met-days history
+    if (!s.hydration.metDays) s.hydration.metDays = metDays;
+    if (!oz) return { state: s, events: [] };
+    var before = nonNeg(s.hydration.oz);
+    s.hydration.day = today;
+    s.hydration.oz = Math.min(before + oz, goal * 3); // sane cap (3x goal) so a fat-fingered entry can't run away
+    var events = [{ type: "WATER_LOGGED", oz: oz, total: s.hydration.oz, goalOz: goal, met: s.hydration.oz >= goal }];
+    if (before < goal && s.hydration.oz >= goal) {    // first time hitting the goal today -> credit a Physical rep + record the met-day
+      if (s.hydration.metDays.indexOf(today) === -1) {
+        s.hydration.metDays = s.hydration.metDays.concat([today]).sort(function (a, b) { return a - b; });
+        if (s.hydration.metDays.length > 120) s.hydration.metDays = s.hydration.metDays.slice(s.hydration.metDays.length - 120);
+      }
+      var r = ingestExternal(s, [{ source: "hydration", kind: "hydration_goal", id: "hydr-" + today, oz: goal }], now);
+      s = r.state;   // ingestExternal cloned `s` (hydration + metDays preserved) and credited the deduped rep
+      events = events.concat(r.events);
+      events.push({ type: "HYDRATION_GOAL", goalOz: goal });
+    }
+    return { state: s, events: events };
   }
 
   // map a WHOOP activity to a concrete rep (or null if it shouldn't score).
@@ -778,6 +1066,8 @@
     if (!a || typeof a !== "object") return null;
     if (a.kind === "workout" || a.kind === "sleep" || a.kind === "recovery") return whoopActivityToRep(a); // route by KIND, not source
     switch (a.kind) {
+      case "hydration_goal":
+        return { id: "hydration", dim: "physical", name: "Hydrated — " + num(a.oz, (CONFIG.hydration && CONFIG.hydration.goalOz) || 110) + "oz 💧", xp: 10, source: a.source || "hydration" };
       case "mcf_order":
         return { id: "mcf_order", dim: "financial", name: "MCF order fulfilled" + (a.units ? (" (" + num(a.units, 0) + "x)") : ""), xp: 12, source: a.source || "amazon" };
       case "outreach":
@@ -790,9 +1080,14 @@
       case "email":
         return { id: "email", dim: "financial", name: "Email sent" + (a.to ? (" → " + String(a.to).slice(0, 40)) : ""), xp: 3, source: a.source || "gmail" };
       case "sale":
-      case "order": {
+      case "order":
+      case "vybrance_sale": {
+        // a real Vybrance sale = a "seed for growth": it credits Financial XP, which raises BOTH the overall
+        // level (totalXp) and the Power Level (incomeXp). Deduped by order id, so each sale counts once.
         var amt = num(a.amount, 0);
-        return { id: "sale", dim: "financial", name: "Sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), big: amt >= 200, source: a.source || "shopify" };
+        var src = a.source || "shopify";
+        var srcLabel = src === "amazon" ? "Amazon" : (src === "shopify" ? "Shopify" : src);
+        return { id: "sale", dim: "financial", amount: amt, name: "🌱 " + srcLabel + " sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), big: amt >= 200, source: src };
       }
       case "task": {
         // a completed Google Task -> classify its title into the right dimension (call mom -> family,
@@ -812,7 +1107,10 @@
   // and coerce non-primitive ids via JSON so distinct objects don't collapse to "[object Object]".
   function dedupKey(a) {
     function part(x) { return encodeURIComponent(typeof x === "object" && x !== null ? JSON.stringify(x) : String(x)); }
-    return part(a.source || "whoop") + ":" + part(a.kind || "activity") + ":" + part(a.id);
+    // canonicalize the sale family: sale/order/vybrance_sale all map to the SAME rep, so the same order id must
+    // dedup regardless of which alias a feed used (else a kind-alias re-ingest triple-credits the same sale).
+    var k = (a.kind === "order" || a.kind === "vybrance_sale") ? "sale" : a.kind;
+    return part(a.source || "whoop") + ":" + part(k || "activity") + ":" + part(a.id);
   }
 
   // bound the dedup map by COUNT (oldest-day first), never by age — age-pruning a credited key
@@ -839,6 +1137,7 @@
       if (s.external.seen[key]) return;          // already counted -> skip (dedup)
       var rep = externalActivityToRep(a);
       if (!rep) return;                          // unknown/unscorable -> do NOT mark seen (lets corrected data score later)
+      rep.extKey = key;                          // carry the dedup identity into the log entry (merge-layer dedup)
       var r = _credit(s, rep, now);
       s = r.state;
       if (!s.external) s.external = { seen: {} };
@@ -936,6 +1235,22 @@
     applyRep: applyRep,
     applyRecurring: applyRecurring,
     recurringStatus: recurringStatus,
+    dimStreak: dimStreak,
+    recentSalesTotal: recentSalesTotal,
+    powerRating: powerRating,
+    powerTier: powerTier,
+    powerGain: powerGain,
+    weeklyPulse: weeklyPulse,
+    achievements: achievements,
+    ratingTrend: ratingTrend,
+    physicalWaived: physicalWaived,
+    POWER_TIERS: POWER_TIERS,
+    HYDRATION_PRESETS: HYDRATION_PRESETS,
+    addWater: addWater,
+    hydrationStatus: hydrationStatus,
+    hydrationGoalOz: hydrationGoalOz,
+    hydrationOz: hydrationOz,
+    hydrationStreak: hydrationStreak,
     ingestExternal: ingestExternal,
     ingestWhoopDays: ingestWhoopDays,
     classifyWhoopPayload: classifyWhoopPayload,

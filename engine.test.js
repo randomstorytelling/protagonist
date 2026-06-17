@@ -34,9 +34,9 @@ test("levelFromXp is monotonic and finite for huge xp", function () {
 });
 
 test("rankForLevel respects boundaries", function () {
-  eq(E.rankForLevel(1), "E"); eq(E.rankForLevel(4), "E"); eq(E.rankForLevel(5), "D");
-  eq(E.rankForLevel(10), "C"); eq(E.rankForLevel(18), "B"); eq(E.rankForLevel(28), "A");
-  eq(E.rankForLevel(42), "S"); eq(E.rankForLevel(60), "National Level"); eq(E.rankForLevel(999), "National Level");
+  eq(E.rankForLevel(1), "Rookie"); eq(E.rankForLevel(4), "Rookie"); eq(E.rankForLevel(5), "Supernova");
+  eq(E.rankForLevel(10), "Warlord"); eq(E.rankForLevel(18), "Commander"); eq(E.rankForLevel(28), "Yonko");
+  eq(E.rankForLevel(42), "Pirate King"); eq(E.rankForLevel(60), "Joy Boy"); eq(E.rankForLevel(999), "Joy Boy");
 });
 
 // ---------------------------------------------------------------- multiplier
@@ -148,10 +148,10 @@ test("a single big rep that crosses multiple levels emits one LEVEL_UP with corr
 
 test("rank up fires when crossing a rank boundary", function () {
   var s = fresh();
-  // pile xp to cross into D rank (level >=5). Need ~ enough totalXp.
+  // pile xp to cross into Supernova rank (level >=5). Need ~ enough totalXp.
   for (var i = 0; i < 6; i++) s = E.applyRep(s, "fin_rep", D(0)).state; // plenty
   assert(E.playerLevel(s) >= 5, "reached >= L5");
-  eq(E.rank(s), "D", "rank D or higher boundary hit");
+  eq(E.rank(s), "Supernova", "Supernova rank (level >=5) reached");
 });
 
 test("titles unlock once, persist, and add an income bonus", function () {
@@ -838,6 +838,209 @@ test("mergeStates penalty clears if EITHER device recovered; finite-guards garba
   assert(E.mergeStates(pen, pen2, D(0)).penalty.active, "stays penalized only if BOTH are");
   var m = E.mergeStates({ version: 2, totalXp: NaN, dims: { physical: Infinity } }, E.newState("L", D(0)), D(0));
   assert(Number.isFinite(m.totalXp) && m.version === E.SCHEMA_VERSION, "garbage input -> finite valid merged state");
+});
+
+// ---------------------------------------------------------------- hydration
+test("newState + validateRepair always provide a sane hydration field", function () {
+  var s = fresh(D(0));
+  eq(s.hydration.oz, 0, "newState seeds hydration oz 0");
+  eq(s.hydration.day, E.dayIndex(D(0)), "newState seeds hydration day = today");
+  var noHy = fresh(D(0)); delete noHy.hydration;
+  var rep = E.validateRepair(noHy, D(0));
+  assert(rep.hydration && rep.hydration.oz === 0, "missing hydration -> default");
+  var bad = fresh(D(0)); bad.hydration = { day: "xxx", oz: -5 };
+  var rep2 = E.validateRepair(bad, D(0));
+  assert(rep2.hydration.oz === 0 && Number.isFinite(rep2.hydration.day), "garbage hydration repaired to finite");
+  // profile
+  eq(fresh(D(0)).profile.weightLb, 208, "newState seeds the player's build");
+  var badP = fresh(D(0)); badP.profile = { weightLb: -3, heightIn: "x", activityTier: "bogus" };
+  var repP = E.validateRepair(badP, D(0));
+  assert(repP.profile.weightLb === 0 && repP.profile.activityTier === "active", "garbage profile repaired (tier falls back to active)");
+});
+
+test("hydrationGoalOz personalizes the daily target from build + activity tier", function () {
+  eq(E.hydrationGoalOz(fresh(D(0))), 125, "208 lb 'active' -> 125 oz (35 mL/kg + training allowance)");
+  var sed = fresh(D(0)); sed.profile = { heightIn: 77, weightLb: 208, activityTier: "sedentary" };
+  eq(E.hydrationGoalOz(sed), 100, "sedentary tier -> lower");
+  var ath = fresh(D(0)); ath.profile = { heightIn: 77, weightLb: 208, activityTier: "athlete" };
+  eq(E.hydrationGoalOz(ath), 155, "athlete tier -> higher");
+  var light = fresh(D(0)); light.profile = { heightIn: 70, weightLb: 150, activityTier: "active" };
+  assert(E.hydrationGoalOz(light) < 125, "a lighter active person gets a lower goal");
+  var noP = fresh(D(0)); delete noP.profile; eq(E.hydrationGoalOz(noP), 125, "no profile -> CONFIG fallback");
+  var zero = fresh(D(0)); zero.profile = { weightLb: 0 }; eq(E.hydrationGoalOz(zero), 125, "zero weight -> fallback");
+});
+
+test("addWater accumulates, reports status against the personal goal, resets each day", function () {
+  var GOAL = E.hydrationGoalOz(fresh(D(0)));   // personalized (125 for 208 lb active)
+  var s = E.addWater(fresh(D(0)), 50, D(0)).state;
+  var hs = E.hydrationStatus(s, D(0));
+  eq(hs.oz, 50, "oz"); eq(hs.goalOz, GOAL, "goal personalized"); eq(hs.remaining, GOAL - 50, "remaining");
+  assert(hs.met === false, "not met at 50");
+  var next = E.hydrationStatus(s, D(1));
+  eq(next.oz, 0, "bar resets to 0 on a new day");
+  assert(next.met === false && next.pct === 0, "fresh day starts empty");
+  var r = E.addWater(null, GOAL, D(0)); assert(r.state.totalXp === 10, "addWater tolerates null state and credits at goal");
+  var cap = E.addWater(fresh(D(0)), 9999, D(0)).state;
+  eq(cap.hydration.oz, GOAL * 3, "single pour capped at 3x goal");
+});
+
+test("hitting the goal credits exactly ONE physical rep, idempotently", function () {
+  var GOAL = E.hydrationGoalOz(fresh(D(0)));
+  var day = E.dayIndex(D(0));
+  var below = E.addWater(fresh(D(0)), GOAL - 20, D(0));
+  eq(below.state.totalXp, 0, "below goal -> no rep yet");
+  var cross = E.addWater(below.state, 40, D(0));            // crosses the goal
+  eq(cross.state.totalXp, 10, "crossing the goal credits +10 physical");
+  eq((cross.state.history[day] || {}).physical, 1, "one physical rep counted toward the day");
+  eq(cross.events.filter(function (e) { return e.type === "HYDRATION_GOAL"; }).length, 1, "HYDRATION_GOAL fired once");
+  var more = E.addWater(cross.state, 32, D(0));             // log more after goal
+  eq(more.state.totalXp, 10, "no re-credit after goal already hit");
+  eq((more.state.history[day] || {}).physical, 1, "still exactly one hydration rep");
+  eq(more.state.hydration.oz, GOAL + 52, "extra water still fills the bar past the goal");
+});
+
+test("hydration streak counts consecutive met days, breaks on a gap", function () {
+  var GOAL = E.hydrationGoalOz(fresh(D(0)));
+  var s = E.addWater(fresh(D(0)), GOAL, D(0)).state;
+  eq(E.hydrationStatus(s, D(0)).streak, 1, "1-day streak after first goal");
+  s = E.addWater(s, GOAL, D(1)).state;
+  eq(E.hydrationStatus(s, D(1)).streak, 2, "consecutive day -> 2");
+  eq(E.hydrationStatus(s, D(2)).streak, 2, "today not logged yet but yesterday's run (d0-d1) stays live");
+  eq(E.hydrationStatus(s, D(3)).streak, 0, "a fully skipped day (d2) breaks the streak");
+});
+
+test("mergeStates: same-day hydration takes the MAX; newer day wins; goal-credit dedups across sync", function () {
+  var d0 = E.dayIndex(D(0)), d1 = E.dayIndex(D(1));
+  var x = fresh(D(0)); x.hydration = { day: d0, oz: 40 };
+  var y = fresh(D(0)); y.hydration = { day: d0, oz: 72 };
+  eq(E.mergeStates(x, y, D(0)).hydration.oz, 72, "same-day -> max oz");
+  var x2 = fresh(D(0)); x2.hydration = { day: d0, oz: 100 };
+  var y2 = fresh(D(1)); y2.hydration = { day: d1, oz: 20 };
+  eq(E.mergeStates(x2, y2, D(1)).hydration.oz, 20, "newer day's bar wins over a stale higher count");
+  // COMMON cross-device flow: device A hits the goal; device B (no water) syncs A's state, then logs more.
+  var GOAL = E.hydrationGoalOz(fresh(D(0)));
+  var devA = E.addWater(fresh(D(0)), GOAL, D(0)).state;     // A: goal hit, +10, seen[hydr-d0]
+  var merged = E.init(JSON.stringify(E.mergeStates(fresh(D(0)), devA, D(0))), D(0)).state; // B receives A
+  eq(merged.totalXp, 10, "synced device shows the goal credit once");
+  eq(merged.hydration.oz, GOAL, "hydration max-merged across devices");
+  var again = E.addWater(merged, 64, D(0));                 // B logs more on the already-completed day
+  eq(again.state.totalXp, 10, "no re-credit on an already-completed day after sync");
+  eq((again.state.history[d0] || {}).physical, 1, "exactly one hydration physical rep survives the round-trip");
+  eq(again.state.hydration.oz, GOAL + 64, "later water still fills the bar");
+});
+
+test("mergeStates dedups deterministic-id external reps across concurrent-offline credits (extKey)", function () {
+  var d0 = E.dayIndex(D(0));
+  var GOAL = E.hydrationGoalOz(fresh(D(0)));
+  // two devices each cross the SAME day's goal OFFLINE at different times (different log ts)
+  var phone = E.addWater(fresh(new Date(2026, 5, 15, 8, 0, 0)), GOAL, new Date(2026, 5, 15, 8, 0, 0)).state;
+  var mac = E.addWater(fresh(new Date(2026, 5, 15, 19, 0, 0)), GOAL, new Date(2026, 5, 15, 19, 0, 0)).state;
+  var synced = E.init(JSON.stringify(E.mergeStates(mac, phone, D(0))), D(0)).state;
+  eq(synced.totalXp, 10, "hydration goal credited EXACTLY ONCE after concurrent-offline merge (was 20)");
+  eq((synced.history[d0] || {}).physical, 1, "exactly one physical rep, not two");
+  eq(E.mergeStates(synced, phone, D(0)).totalXp, 10, "re-merge is stable (idempotent)");
+  // same latent bug for ANY external source — verify WHOOP workout ingested offline on two devices counts once
+  var wk = [{ source: "whoop", kind: "workout", id: "wk-123", sport: "run", durationMin: 60, strain: 12 }];
+  var pa = E.ingestExternal(fresh(new Date(2026, 5, 15, 7, 0, 0)), wk, new Date(2026, 5, 15, 7, 0, 0)).state;
+  var pb = E.ingestExternal(fresh(new Date(2026, 5, 15, 20, 0, 0)), wk, new Date(2026, 5, 15, 20, 0, 0)).state;
+  var wm = E.mergeStates(pa, pb, D(0));
+  assert(pa.totalXp > 0 && wm.totalXp === pa.totalXp, "same WHOOP workout from two devices counts once");
+  eq((wm.history[d0] || {}).physical, 1, "one physical rep for the shared workout");
+});
+
+test("dimStreak counts per-dimension consecutive days from history", function () {
+  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
+  s = E.applyRep(s, "ment_read", D(0)).state;       // mental only on d0
+  s = E.applyRep(s, "phys_incline", D(1)).state;
+  s = E.applyRep(s, "phys_mobility", D(2)).state;    // physical d0,d1,d2
+  eq(E.dimStreak(s, "physical", D(2)), 3, "physical 3-day streak through today");
+  eq(E.dimStreak(s, "mental", D(2)), 0, "mental broke (only d0)");
+  eq(E.dimStreak(s, "physical", D(3)), 3, "yesterday's run still live before today's rep");
+  eq(E.dimStreak(s, "physical", D(4)), 0, "a skipped day breaks it");
+  eq(E.dimStreak(s, "financial", D(2)), 0, "no financial reps -> 0");
+});
+
+test("Vybrance sales credit as seeds, raise overall + power level, sum over 7 days, dedup by order id", function () {
+  var s0 = fresh(D(0));
+  var orders = [
+    { source: "shopify", kind: "sale", id: "S1", amount: 60 },
+    { source: "amazon", kind: "sale", id: "A1", amount: 240 },
+  ];
+  var s = E.ingestExternal(s0, orders, D(0)).state;
+  assert(s.totalXp > 0, "sales raise overall XP (the overall level)");
+  assert(s.incomeXp > 0, "sales raise Power Level (incomeXp)");
+  eq(s.bigWins, 1, "a $240 order is a big win");
+  eq(E.recentSalesTotal(s, 7, D(0)), 300, "7-day sales total sums order amounts");
+  var s2 = E.ingestExternal(s, orders, D(0)).state;
+  eq(s2.totalXp, s.totalXp, "re-ingesting the same orders is a no-op (deduped by id)");
+  eq(E.recentSalesTotal(s2, 7, D(0)), 300, "no double-count in the 7-day total");
+  eq(E.recentSalesTotal(s, 7, D(10)), 0, "sales older than 7 days drop out of the window");
+});
+
+test("powerRating composites all activity, scales with streaks + recovery; tiers are bounded", function () {
+  eq(E.powerRating(fresh(D(0)), D(0)), 0, "fresh -> 0");
+  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
+  var r1 = E.powerRating(s, D(0));
+  assert(r1 > 0, "rises with activity");
+  var s2 = E.applyRep(s, "fin_close", D(0)).state;     // big financial win
+  assert(E.powerRating(s2, D(0)) > r1, "a big win raises the rating");
+  eq(E.powerTier(0).name, "Base Form", "0 -> Base Form");
+  eq(E.powerTier(2000).name, "Gear 3", "2000 -> Gear 3");
+  eq(E.powerTier(50000).name, "Sun God Nika", "50k -> Sun God Nika");
+  var t = E.powerTier(2000); assert(t.pct >= 0 && t.pct <= 100, "tier pct bounded");
+  var hi = JSON.parse(JSON.stringify(s2)); hi.whoop = { recovery: 100, zone: "green" };
+  var lo = JSON.parse(JSON.stringify(s2)); lo.whoop = { recovery: 0, zone: "red" };
+  assert(E.powerRating(hi, D(0)) > E.powerRating(lo, D(0)), "higher recovery -> higher power");
+});
+
+test("weeklyPulse + powerGain summarize the last 7 days", function () {
+  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
+  s = E.applyRep(s, "ment_read", D(1)).state;
+  var wp = E.weeklyPulse(s, D(1));
+  eq(wp.reps, 2, "2 reps this week");
+  assert(wp.xp > 0 && wp.activeDays === 2, "xp tallied + 2 active days");
+  assert(E.powerGain(s, 7, D(1)) > 0, "power banked this week > 0");
+  eq(E.weeklyPulse(s, D(30)).reps, 0, "nothing in the last 7 days a month later");
+});
+
+test("sale family (sale/order/vybrance_sale) dedups to ONE credit per order id (no kind-aliasing farm)", function () {
+  var s = E.ingestExternal(fresh(D(0)), [{ source: "shopify", kind: "sale", id: "Y", amount: 100 }], D(0)).state;
+  var once = s.incomeXp, onceSales = E.recentSalesTotal(s, 7, D(0));
+  s = E.ingestExternal(s, [{ source: "shopify", kind: "order", id: "Y", amount: 100 }], D(0)).state;
+  s = E.ingestExternal(s, [{ source: "shopify", kind: "vybrance_sale", id: "Y", amount: 100 }], D(0)).state;
+  eq(s.incomeXp, once, "aliasing the same order under order/vybrance_sale does NOT re-credit");
+  eq(E.recentSalesTotal(s, 7, D(0)), onceSales, "7-day sales not inflated by kind-aliasing");
+  eq(E.init(JSON.stringify(E.mergeStates(s, s, D(0))), D(0)).state.incomeXp, once, "stays single after merge/init round-trip");
+});
+
+test("achievements unlock from milestones; progress always bounded 0..1", function () {
+  var a0 = E.achievements(fresh(D(0)), D(0));
+  assert(a0.length >= 10, "a set of badges");
+  var first0 = a0.filter(function (x) { return x.id === "first"; })[0];
+  assert(!first0.unlocked && first0.progress === 0, "First Blood locked on a fresh save");
+  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
+  var first1 = E.achievements(s, D(0)).filter(function (x) { return x.id === "first"; })[0];
+  assert(first1.unlocked, "First Blood unlocks after a rep");
+  E.achievements(s, D(0)).forEach(function (x) { assert(x.progress >= 0 && x.progress <= 1, "bounded: " + x.id); });
+});
+
+test("ratingTrend is endpoint-accurate and the right length", function () {
+  var s = E.applyRep(fresh(D(0)), "fin_close", D(0)).state;
+  var tr = E.ratingTrend(s, 14, D(5));
+  eq(tr.length, 14, "14 points");
+  eq(tr[tr.length - 1].rating, E.powerRating(s, D(5)), "last point equals the live rating");
+  assert(tr[0].rating <= tr[tr.length - 1].rating, "trend rises into today");
+});
+
+test("a WHOOP-red recovery day waives the physical Daily Quest requirement (rest counts)", function () {
+  var day = E.dayIndex(D(0));
+  var s = fresh(D(0));
+  ["ment_read", "spir_meditate", "fam_call", "soc_friend", "fin_dms"].forEach(function (r) { s = E.applyRep(s, r, D(0)).state; });
+  assert(!E.isDailyMet(s, day), "not met without physical on a normal day");
+  s.whoop = { date: ymd(0), recovery: 20, zone: "red" };
+  assert(E.physicalWaived(s, day) && E.isDailyMet(s, day), "red day waives physical -> daily met");
+  s.whoop = { date: ymd(0), recovery: 80, zone: "green" };
+  assert(!E.physicalWaived(s, day) && !E.isDailyMet(s, day), "green day does NOT waive physical");
 });
 
 // ---------------------------------------------------------------- report

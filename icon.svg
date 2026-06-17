@@ -1,7 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#05070e"/>
-  <rect x="20" y="20" width="472" height="472" rx="80" fill="none" stroke="#13233f" stroke-width="2"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#5fe0ff" stroke-width="14" opacity="0.92"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#5fe0ff" stroke-width="30" opacity="0.10"/>
-  <text x="256" y="332" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="220" font-weight="700" fill="#5fe0ff" text-anchor="middle">P</text>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#15273f"/>
+      <stop offset="58%" stop-color="#0a1322"/>
+      <stop offset="100%" stop-color="#05070e"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#5fe0ff" stroke-width="46" opacity="0.10"/>
+  <circle cx="256" cy="256" r="158" fill="none" stroke="#5fe0ff" stroke-width="13" opacity="0.95"/>
+  <text x="256" y="342" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="232" font-weight="700" fill="#eaf8ff" text-anchor="middle">P</text>
 </svg>
