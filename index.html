@@ -333,7 +333,23 @@
   .achbar{margin-top:16px;height:9px;}
   .achbar > i{background:linear-gradient(90deg,var(--blue),var(--cyan));}
   .achprog{font-family:var(--mono);font-size:12px;color:var(--cyan);margin-top:8px;letter-spacing:0.04em;}
-  .achunlocked{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:0.16em;color:var(--financial);margin-top:16px;text-shadow:0 0 12px rgba(63,224,160,0.4);}
+  .achunlocked{font-family:var(--mono);font-size:14px;font-weight:700;letter-spacing:0.16em;color:var(--gold);margin-top:16px;text-shadow:0 0 12px rgba(255,215,106,0.4);}
+  /* leveled-track badge bits */
+  .ach .alv{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:0.04em;}
+  .ach.on .alv{color:var(--cyan);}
+  .ach.maxed{border-color:rgba(255,215,106,0.55);box-shadow:0 0 12px rgba(255,215,106,0.16), inset 0 0 14px rgba(255,215,106,0.05);}
+  .ach.maxed .alv{color:var(--gold);}
+  /* level ladder in the detail sheet */
+  .achladder{margin:16px 0 4px;text-align:left;}
+  .lvl{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid rgba(95,224,255,0.08);font-size:13.5px;opacity:0.45;}
+  .lvl.done{opacity:1;}
+  .lvl.next{opacity:1;background:rgba(46,125,255,0.10);border-radius:8px;border-bottom-color:transparent;}
+  .lvl .lm{width:16px;text-align:center;font-family:var(--mono);color:var(--muted);}
+  .lvl.done .lm{color:var(--financial);}
+  .lvl.next .lm{color:var(--cyan);}
+  .lvl .lnm{flex:1;}
+  .lvl.next .lnm{color:var(--cyan);}
+  .lvl .lat{font-family:var(--mono);font-size:11px;color:var(--faint2);}
   .ach.on{opacity:1;border-color:rgba(95,224,255,0.5);box-shadow:0 0 12px rgba(46,125,255,0.16), inset 0 0 14px rgba(95,224,255,0.05);}
   .ach .ai{font-size:23px;line-height:1.1;filter:grayscale(1) opacity(0.8);}
   .ach.on .ai{filter:none;}
@@ -832,30 +848,39 @@
   // ---- 🏅 achievements (tap any badge to see how to earn it) ----
   function renderAchievements(){
     var list = G.achievements(st, now());
-    var got = list.filter(function(a){ return a.unlocked; }).length;
-    $("achMeta").textContent = got + " / " + list.length;
+    var got = 0, total = 0;
+    list.forEach(function(a){ got += a.level; total += a.maxLevel; });
+    $("achMeta").textContent = got + " / " + total + " lv";
     $("achGrid").innerHTML = list.map(function(a,i){
-      var prog = a.unlocked ? '' : '<div class="ap"><i style="width:'+Math.round(a.progress*100)+'%"></i></div>';
-      return '<div class="ach'+(a.unlocked?' on':'')+'" data-ach="'+i+'"><div class="ai">'+a.icon+'</div><div class="an">'+esc(a.name)+'</div>'+prog+'</div>';
+      var maxed = a.level >= a.maxLevel;
+      var prog = maxed ? '' : '<div class="ap"><i style="width:'+Math.round(a.progress*100)+'%"></i></div>';
+      var lv = '<div class="alv">'+(maxed ? 'MAX' : ('Lv '+a.level+'/'+a.maxLevel))+'</div>';
+      return '<div class="ach'+(a.unlocked?' on':'')+(maxed?' maxed':'')+'" data-ach="'+i+'"><div class="ai">'+a.icon+'</div><div class="an">'+esc(a.name)+'</div>'+lv+prog+'</div>';
     }).join("");
     Array.prototype.forEach.call($("achGrid").querySelectorAll("[data-ach]"), function(el){
       el.onclick = function(){ openAchievement(list[+el.getAttribute("data-ach")]); };
     });
   }
-  // tap-to-see-how detail, shown in the existing bottom sheet
+  // tap-to-see-how detail: the full level ladder, with what you've cleared + the next tier to reach
   function openAchievement(a){
     if(!a) return;
-    $("sheetTitle").textContent = (a.saga ? a.saga+"  ·  " : "") + "Achievement";
-    $("sheetDesc").textContent = a.unlocked ? "✓ Unlocked" : ("Locked — "+Math.round(a.progress*100)+"% there");
+    var maxed = a.level >= a.maxLevel;
+    $("sheetTitle").textContent = (a.saga ? a.saga+"  ·  " : "") + a.name;
+    $("sheetDesc").textContent = a.level>0 ? ("Level "+a.level+" / "+a.maxLevel+"  ·  "+a.tierName) : ("Not started  ·  0 / "+a.maxLevel);
+    var ladder = a.levels.map(function(L,idx){
+      var done = idx < a.level, cur = idx === a.level;
+      var mark = done ? "✓" : (cur ? "▸" : "○");
+      return '<div class="lvl'+(done?" done":(cur?" next":""))+'"><span class="lm">'+mark+'</span><span class="lnm">'+esc(L.name)+'</span><span class="lat">'+esc(L.label)+'</span></div>';
+    }).join("");
     var pct = Math.round(a.progress*100);
-    $("repList").innerHTML = '<div class="achdetail'+(a.unlocked?' on':'')+'">'
+    $("repList").innerHTML = '<div class="achdetail'+(a.unlocked?' on':'')+(maxed?' maxed':'')+'">'
       + '<div class="achbig">'+a.icon+'</div>'
       + '<div class="achttl">'+esc(a.name)+'</div>'
-      + '<div class="achhow"><b>How to earn:</b> '+esc(a.desc)+'</div>'
-      + (a.unlocked
-          ? '<div class="achunlocked">✓ UNLOCKED</div>'
+      + '<div class="achladder">'+ladder+'</div>'
+      + (maxed
+          ? '<div class="achunlocked">✓ ALL '+a.maxLevel+' LEVELS</div>'
           : '<div class="bar achbar"><i style="width:'+pct+'%"></i></div>'
-            + '<div class="achprog">'+esc(a.progressText||(pct+'%'))+'</div>')
+            + '<div class="achprog">Next — '+esc(a.nextName)+': '+esc(a.progressText)+'</div>')
       + '</div>';
     $("scrim").classList.add("show"); $("sheet").classList.add("show");
     if(audioCtx && audioCtx.state==="suspended") audioCtx.resume();

@@ -1013,15 +1013,21 @@ test("sale family (sale/order/vybrance_sale) dedups to ONE credit per order id (
   eq(E.init(JSON.stringify(E.mergeStates(s, s, D(0))), D(0)).state.incomeXp, once, "stays single after merge/init round-trip");
 });
 
-test("achievements unlock from milestones; progress always bounded 0..1", function () {
+test("achievements are 16 leveled tracks; level/progress bounded; tiers earned by metrics", function () {
   var a0 = E.achievements(fresh(D(0)), D(0));
-  assert(a0.length >= 10, "a set of badges");
-  var first0 = a0.filter(function (x) { return x.id === "first"; })[0];
-  assert(!first0.unlocked && first0.progress === 0, "First Blood locked on a fresh save");
-  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
-  var first1 = E.achievements(s, D(0)).filter(function (x) { return x.id === "first"; })[0];
-  assert(first1.unlocked, "First Blood unlocks after a rep");
-  E.achievements(s, D(0)).forEach(function (x) { assert(x.progress >= 0 && x.progress <= 1, "bounded: " + x.id); });
+  eq(a0.length, 16, "16 tracks");
+  a0.forEach(function (t) {
+    assert(Array.isArray(t.levels) && t.levels.length >= 1, "track has levels: " + t.id);
+    assert(t.level >= 0 && t.level <= t.maxLevel, "level within [0,max]: " + t.id);
+    assert(t.progress >= 0 && t.progress <= 1, "progress bounded: " + t.id);
+    assert(t.unlocked === (t.level >= 1), "unlocked iff level>=1: " + t.id);
+  });
+  var tr0 = a0.filter(function (t) { return t.id === "training"; })[0];
+  eq(tr0.level, 0, "Training starts at level 0 on a fresh save");
+  assert(!tr0.unlocked, "and is locked");
+  var s = fresh(D(0)); for (var i = 0; i < 12; i++) s = E.applyRep(s, "phys_pushups", D(0)).state; // 12 reps
+  var tr1 = E.achievements(s, D(0)).filter(function (t) { return t.id === "training"; })[0];
+  assert(tr1.level >= 1 && tr1.unlocked, "Training reaches level 1 at 10 reps");
 });
 
 test("ratingTrend is endpoint-accurate and the right length", function () {

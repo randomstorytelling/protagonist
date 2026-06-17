@@ -874,60 +874,68 @@
     };
   }
 
-  function dayHasAllDims(state) {
-    var h = state && state.history; if (!h) return false;
+  // count history days where ALL six dimensions were trained / any dimension was trained
+  function allSixDaysCount(state) {
+    var h = state && state.history, c = 0; if (!h) return 0;
     for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) {
       var day = h[k], all = true;
       for (var i = 0; i < DIMENSIONS.length; i++) if (!(day && (day[DIMENSIONS[i]] || 0) > 0)) { all = false; break; }
-      if (all) return true;
+      if (all) c++;
     }
-    return false;
+    return c;
   }
-  // derived milestone badges (no persisted state — recomputed from the save). progress 0..1; `saga` = which
-  // universe it's from; `progressText` = "current / target" for the tap-to-see-how detail.
+  function activeDaysCount(state) {
+    var h = state && state.history, c = 0; if (!h) return 0;
+    for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) {
+      var day = h[k];
+      if (day && DIMENSIONS.some(function (d) { return (day[d] || 0) > 0; })) c++;
+    }
+    return c;
+  }
+  // 16 LEVELED achievement tracks (derived, no persisted state). Each track has multiple tiers you climb; the
+  // tier names mix the worlds (One Piece / DBZ / Naruto / HxH / Solo Leveling). Returns level / maxLevel /
+  // progress-to-next + the full ladder for the tap-to-see-how detail.
   function achievements(state, now) {
     var s = state || {};
     var reps = repsTotal(s), longest = (s.streak && s.streak.longest) || 0, big = nonNeg(s.bigWins);
     var metDays = (s.hydration && Array.isArray(s.hydration.metDays)) ? s.hydration.metDays.length : 0;
-    var sales = recentSalesTotal(s, 7, now), rating = powerRating(s, now), lvl = playerLevel(s);
-    var allSix = dayHasAllDims(s);
+    var sales = recentSalesTotal(s, 7, now), rating = powerRating(s, now), lvl = playerLevel(s), power = incomeLevel(s);
     function dimLvl(d) { return levelFromXp(nonNeg(s.dims && s.dims[d])).level; }
-    var spirit = dimLvl("spiritual"), social = dimLvl("social");
     var minDim = DIMENSIONS.reduce(function (m, d) { return Math.min(m, dimLvl(d)); }, Infinity); if (!Number.isFinite(minDim)) minDim = 0;
+    var sixDays = allSixDaysCount(s), activeDays = activeDaysCount(s);
     function n(x) { return Math.round(x).toLocaleString(); }
-    function A(id, name, icon, saga, desc, ok, prog, pt) { return { id: id, name: name, icon: icon, saga: saga, desc: desc, unlocked: !!ok, progress: clamp(prog, 0, 1), progressText: pt || "" }; }
+    function L(at, name) { return { at: at, name: name }; }
+    // build one leveled track: count tiers passed, progress to the next, full labelled ladder
+    function T(id, name, icon, saga, unit, metric, levels) {
+      function fmt(v) { return unit === "$" ? ("$" + n(v)) : unit === "Lv" ? ("Lv " + n(v)) : unit === "d" ? (n(v) + "d") : n(v); }
+      var lv = 0; for (var i = 0; i < levels.length; i++) if (metric >= levels[i].at) lv = i + 1;
+      var maxed = lv >= levels.length, next = maxed ? null : levels[lv], prevAt = lv > 0 ? levels[lv - 1].at : 0;
+      return {
+        id: id, name: name, icon: icon, saga: saga,
+        levels: levels.map(function (x) { return { at: x.at, name: x.name, label: fmt(x.at) }; }),
+        level: lv, maxLevel: levels.length, tierName: lv > 0 ? levels[lv - 1].name : "",
+        nextName: next ? next.name : null, unlocked: lv >= 1,
+        progress: maxed ? 1 : clamp((metric - prevAt) / ((next.at - prevAt) || 1), 0, 1),
+        progressText: maxed ? "MAX" : (fmt(metric) + " / " + fmt(next.at))
+      };
+    }
     return [
-      // ---- Core ----
-      A("first", "First Blood", "⚔️", "Core", "Log your very first rep.", reps >= 1, reps / 1, n(reps) + " / 1 rep"),
-      A("ten", "Warming Up", "🔁", "Core", "Log 10 reps total.", reps >= 10, reps / 10, n(reps) + " / 10 reps"),
-      A("century", "Centurion", "💯", "Core", "Log 100 reps total.", reps >= 100, reps / 100, n(reps) + " / 100 reps"),
-      A("allsix", "Renaissance", "🎯", "Core", "Train all six dimensions in a single day.", allSix, allSix ? 1 : 0, allSix ? "done" : "not yet"),
-      A("bigwin", "First Win", "🏆", "Core", "Land your first big win — book a gig or close a sale.", big >= 1, big / 1, n(big) + " / 1"),
-      A("streak7", "Iron Will", "🛡️", "Core", "Reach a 7-day streak.", longest >= 7, longest / 7, n(longest) + " / 7 days"),
-      A("streak30", "Unbroken", "⛓️", "Core", "Reach a 30-day streak.", longest >= 30, longest / 30, n(longest) + " / 30 days"),
-      // ---- Vybrance ----
-      A("hydrate1", "Hydrated", "💧", "Vybrance", "Hit your daily water goal once.", metDays >= 1, metDays / 1, n(metDays) + " / 1 day"),
-      A("hydrate7", "Water Sage", "🌊", "Vybrance", "Hit your water goal on 7 different days.", metDays >= 7, metDays / 7, n(metDays) + " / 7 days"),
-      A("rain", "Rainmaker", "🌧️", "Vybrance", "Pull $250+ in Vybrance sales in a 7-day window.", sales >= 250, sales / 250, "$" + n(sales) + " / $250"),
-      // ---- One Piece (Luffy's gears + haki) ----
-      A("gear3", "Gear 3", "👊", "One Piece", "Reach Power Rating 1,800 (Gear 3).", rating >= 1800, rating / 1800, n(rating) + " / 1,800"),
-      A("gear5", "Gear 5", "☀️", "One Piece", "Reach Power Rating 11,000 (Gear 5 · Sun God Nika).", rating >= 11000, rating / 11000, n(rating) + " / 11,000"),
-      A("haki", "Conqueror's Haki", "🏴‍☠️", "One Piece", "Land 5 big wins.", big >= 5, big / 5, n(big) + " / 5"),
-      // ---- Solo Leveling ----
-      A("monarch", "Shadow Monarch", "👑", "Solo Leveling", "Reach Level 20.", lvl >= 20, lvl / 20, "Lv " + n(lvl) + " / 20"),
-      // ---- Dragon Ball Z (power ladder) ----
-      A("ssj", "Super Saiyan", "🟡", "Dragon Ball Z", "Reach Power Rating 5,000.", rating >= 5000, rating / 5000, n(rating) + " / 5,000"),
-      A("over9000", "It's Over 9,000!", "💥", "Dragon Ball Z", "Reach Power Rating 9,000.", rating >= 9000, rating / 9000, n(rating) + " / 9,000"),
-      A("spiritbomb", "Spirit Bomb", "🔵", "Dragon Ball Z", "Gather $1,000+ in Vybrance sales in 7 days.", sales >= 1000, sales / 1000, "$" + n(sales) + " / $1,000"),
-      // ---- Naruto (perseverance + paths) ----
-      A("ninja", "Ninja Way", "🍥", "Naruto", "Hold a 21-day streak — never give up.", longest >= 21, longest / 21, n(longest) + " / 21 days"),
-      A("sage", "Sage Mode", "🐸", "Naruto", "Get your Spiritual dimension to Level 5.", spirit >= 5, spirit / 5, "Lv " + n(spirit) + " / 5"),
-      A("talk", "Talk no Jutsu", "🗣️", "Naruto", "Get your Social dimension to Level 5.", social >= 5, social / 5, "Lv " + n(social) + " / 5"),
-      A("hokage", "Hokage", "🔥", "Naruto", "Reach Level 25.", lvl >= 25, lvl / 25, "Lv " + n(lvl) + " / 25"),
-      // ---- Hunter x Hunter (exam, nen, money) ----
-      A("license", "Hunter License", "🪪", "Hunter x Hunter", "Reach Level 10 — pass the Hunter Exam.", lvl >= 10, lvl / 10, "Lv " + n(lvl) + " / 10"),
-      A("nen", "Nen Master", "🌀", "Hunter x Hunter", "Get all six dimensions to Level 3 (master every Nen type).", minDim >= 3, minDim / 3, "weakest dim Lv " + n(minDim) + " / 3"),
-      A("greed", "Greed Island", "💎", "Hunter x Hunter", "Reach $500+ in Vybrance sales in 7 days.", sales >= 500, sales / 500, "$" + n(sales) + " / $500"),
+      T("power", "Power", "⚡", "One Piece × DBZ", "", rating, [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")]),
+      T("notoriety", "Notoriety", "🏴‍☠️", "One Piece", "Lv", lvl, [L(5, "Supernova"), L(10, "Warlord"), L(18, "Commander"), L(28, "Yonko"), L(42, "Pirate King"), L(60, "Joy Boy")]),
+      T("fire", "Will of Fire", "🔥", "Naruto", "d", longest, [L(3, "Genin"), L(7, "Chunin"), L(14, "Jonin"), L(30, "Sannin"), L(60, "Kage"), L(100, "Hokage")]),
+      T("training", "Training", "💪", "Dragon Ball Z", "", reps, [L(10, "Warm-Up"), L(50, "Weighted Clothes"), L(100, "Gravity x10"), L(250, "Gravity x100"), L(500, "Hyperbolic Chamber"), L(1000, "Ultra Instinct")]),
+      T("wins", "Big Wins", "🏆", "One Piece", "", big, [L(1, "First Win"), L(3, "The Closer"), L(5, "Conqueror's Haki"), L(10, "Emperor"), L(25, "Living Legend")]),
+      T("treasure", "Treasure", "💎", "Hunter x Hunter", "$", sales, [L(250, "Bounty"), L(500, "Greed Island"), L(1000, "Spirit Bomb"), L(2500, "Roger's Stash"), L(5000, "One Piece")]),
+      T("earning", "Earning Power", "💰", "Vybrance", "Lv", power, [L(3, "Hustler"), L(5, "Rainmaker"), L(10, "Mogul"), L(15, "Tycoon"), L(20, "Kingpin")]),
+      T("hydration", "Hydration", "💧", "Vybrance", "d", metDays, [L(1, "First Sip"), L(7, "Hydrated"), L(30, "Water Sage"), L(90, "Aquaman")]),
+      T("nen", "Nen Mastery", "🌀", "Hunter x Hunter", "Lv", minDim, [L(2, "Ten"), L(3, "Ren"), L(5, "Hatsu"), L(10, "Nen Master")]),
+      T("balance", "Balance", "🎯", "Core", "", sixDays, [L(1, "Whole"), L(5, "Balanced"), L(15, "Renaissance"), L(30, "Ascended")]),
+      T("mind", "Mind", "🧠", "Naruto", "Lv", dimLvl("mental"), [L(3, "Student"), L(5, "Scholar"), L(10, "Sage"), L(15, "Grandmaster")]),
+      T("body", "Body", "🦾", "Dragon Ball Z", "Lv", dimLvl("physical"), [L(3, "Athlete"), L(5, "Warrior"), L(10, "Beast"), L(15, "Titan")]),
+      T("spirit", "Spirit", "🙏", "Naruto", "Lv", dimLvl("spiritual"), [L(3, "Calm"), L(5, "Centered"), L(10, "Sage Mode"), L(15, "Enlightened")]),
+      T("bonds", "Bonds", "🤝", "Core", "Lv", dimLvl("family"), [L(3, "Present"), L(5, "Devoted"), L(10, "Pillar"), L(15, "Patriarch")]),
+      T("influence", "Influence", "🗣️", "Naruto", "Lv", dimLvl("social"), [L(3, "Friendly"), L(5, "Connector"), L(10, "Talk-no-Jutsu"), L(15, "Charismatic")]),
+      T("consistency", "Consistency", "🗓️", "Solo Leveling", "d", activeDays, [L(7, "Week"), L(30, "Month"), L(100, "Centurion"), L(365, "Year of the Player")]),
     ];
   }
   // reconstruct a Power Rating trend for the last `days` from the per-rep log (the recent ledger), so the
