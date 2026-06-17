@@ -293,6 +293,7 @@
       // build + activity tier drive the personalized hydration goal (and future calorie/effort sizing).
       // WHOOP-derived: 25-day avg day-strain ~10 with frequent 15+ days (basketball, lifting, hikes) => "active".
       profile: { heightIn: 77, weightLb: 208, activityTier: "active" },
+      salesByDay: {},             // dayIndex -> total Vybrance sales $ that day (durable; survives log eviction)
     };
   }
 
@@ -384,6 +385,18 @@
         activityTier: (["sedentary", "active", "athlete"].indexOf(s.profile.activityTier) !== -1) ? s.profile.activityTier : out.profile.activityTier,
       };
     }
+    // durable per-day sales $: repair existing values, then BACKFILL from the log via max (so pre-salesByDay
+    // saves get the durable record without double-counting). Finite, no future days.
+    out.salesByDay = {};
+    if (s.salesByDay && typeof s.salesByDay === "object") {
+      for (var sdk in s.salesByDay) if (Object.prototype.hasOwnProperty.call(s.salesByDay, sdk)) {
+        var sdd = Number(sdk), sdv = nonNeg(s.salesByDay[sdk]);
+        if (Number.isFinite(sdd) && sdd <= today + 1 && sdv > 0) out.salesByDay[String(Math.floor(sdd))] = sdv;
+      }
+    }
+    var logByDay = {};
+    (out.log || []).forEach(function (e) { if (e && e.dim === "financial" && e.amount != null) { var d = num(e.day, null); if (d === null || d > today + 1) return; var k = String(Math.floor(d)); logByDay[k] = (logByDay[k] || 0) + nonNeg(e.amount); } });
+    for (var lbk in logByDay) out.salesByDay[lbk] = Math.max(nonNeg(out.salesByDay[lbk]), Math.round(logByDay[lbk] * 100) / 100);
     out.version = SCHEMA_VERSION;
     recomputeStreak(out, today); // streak is always derived, never trusted from disk
     return out;
@@ -625,6 +638,18 @@
       ? { day: ah.day, oz: Math.max(nonNeg(ah.oz), nonNeg(bh.oz)), metDays: mdMerged }
       : (ah.day > bh.day ? { day: ah.day, oz: nonNeg(ah.oz), metDays: mdMerged } : { day: bh.day, oz: nonNeg(bh.oz), metDays: mdMerged });
 
+    // durable per-day sales $: per-day MAX (a grow-only CRDT — commutative/idempotent). Bounded to recent days.
+    // (recentSalesTotal takes max(this, log-sum), so the live log still covers concurrent same-day different-order
+    // credits within the window; this is the durable backstop once entries age out of the capped log.)
+    out.salesByDay = {};
+    var sbdToday = safeToday(now), sbdKeys = {};
+    [A.salesByDay, B.salesByDay].forEach(function (mm) { for (var k in (mm || {})) if (Object.prototype.hasOwnProperty.call(mm, k)) sbdKeys[k] = 1; });
+    Object.keys(sbdKeys).forEach(function (dk) {
+      var d = Number(dk); if (!Number.isFinite(d) || d > sbdToday + 1 || d < sbdToday - 400) return;
+      var v = Math.max(nonNeg(A.salesByDay && A.salesByDay[dk]), nonNeg(B.salesByDay && B.salesByDay[dk]));
+      if (v > 0) out.salesByDay[String(Math.floor(d))] = v;
+    });
+
     // daily: same day -> completed if EITHER did; else the later day's record
     if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed) };
     else out.daily = (A.daily.day > B.daily.day) ? { day: A.daily.day, completed: A.daily.completed } : { day: B.daily.day, completed: B.daily.completed };
@@ -685,6 +710,10 @@
     // log entry before aggregates are reconstructed — without it the ts-keyed union double-counts them.
     s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual", extKey: rep.extKey || null, amount: (rep.amount != null ? num(rep.amount, 0) : null) });
     if (s.log.length > LOG_CAP) s.log.length = LOG_CAP;
+    if (rep.dim === "financial" && rep.amount != null) {   // durable per-day sales $ (so the readout survives log eviction)
+      if (!s.salesByDay) s.salesByDay = {};
+      s.salesByDay[today] = Math.round(((s.salesByDay[today] || 0) + nonNeg(rep.amount)) * 100) / 100;
+    }
     s.lastActiveDay = today;
 
     if (!s.daily.completed && isDailyMet(s, today)) {
@@ -768,12 +797,16 @@
     var today = effectiveDay(state, now);
     var since = today - (Math.max(1, num(days, 7)) - 1);
     var log = (state && state.log) || [];
-    var sum = 0;
+    var logSum = 0;
     log.forEach(function (e) {
       if (!e || e.dim !== "financial" || e.amount == null) return;
-      if (num(e.day, -1) >= since) sum += nonNeg(e.amount);
+      if (num(e.day, -1) >= since) logSum += nonNeg(e.amount);
     });
-    return Math.round(sum);
+    // durable backstop: sum the per-day record over the window. max(live log, durable) never under-reports —
+    // the log covers recent sales within the cap; salesByDay survives once entries age out.
+    var sbd = (state && state.salesByDay) || {}, sbdSum = 0;
+    for (var k in sbd) if (Object.prototype.hasOwnProperty.call(sbd, k)) { var d = num(k, -1); if (d >= since && d <= today) sbdSum += nonNeg(sbd[k]); }
+    return Math.round(Math.max(logSum, sbdSum));
   }
 
   // ============================ POWER RATING — the culmination of all activities ============================

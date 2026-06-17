@@ -91,7 +91,7 @@ async function spapiDaySales(date) {
   return Math.round(total * 100) / 100;
 }
 
-(async function () {
+async function main() {
   var args = process.argv.slice(2);
   var dry = args.indexOf("--dry") !== -1; args = args.filter(function (a) { return a !== "--dry"; });
   var spapi = args.indexOf("--spapi") !== -1; args = args.filter(function (a) { return a !== "--spapi"; });
@@ -126,4 +126,8 @@ async function spapiDaySales(date) {
   if (!res.credited.length) { console.log("Amazon " + date + " $" + amount + " already credited — no-op"); return; }
   var c = res.credited[0];
   console.log("credited Amazon " + date + ": +" + c.xp + " " + c.dim + "  \"" + c.name + "\"  | cloud now: totalXp " + res.state.totalXp + ", power " + res.state.incomeXp + ", 7d-sales $" + E.recentSalesTotal(res.state, 7, new Date()));
-})().catch(function (e) { console.error("FAIL " + ((e && e.message) || e)); process.exit(1); });
+}
+
+// export the pure helpers for tests; only run the feed when executed directly (not on require)
+module.exports = { chicagoYMD: chicagoYMD, shiftYMD: shiftYMD, chicagoOffset: chicagoOffset, spapiDaySales: spapiDaySales };
+if (require.main === module) main().catch(function (e) { console.error("FAIL " + ((e && e.message) || e)); process.exit(1); });

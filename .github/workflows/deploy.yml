@@ -22,10 +22,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Run engine + sync test suites (deploy is gated on these)
+      - name: Run engine + sync + feeds test suites (deploy is gated on these)
         run: |
           node engine.test.js
           node whoop-sync.test.js
+          node feeds.test.js
 
   deploy:
     needs: test

@@ -1081,6 +1081,18 @@ test("powerRating stays finite even for a corrupt astronomically-large save", fu
   assert(Number.isFinite(r) && r >= 0, "powerRating never NaN/Infinity (got " + r + ")");
 });
 
+test("recentSalesTotal is durable — survives the sale aging out of the capped log (salesByDay backstop)", function () {
+  var d0 = E.dayIndex(D(0));
+  var s = E.ingestExternal(fresh(D(0)), [{ source: "amazon", kind: "sale", id: "amzn-day-x", amount: 500 }], D(0)).state;
+  eq(E.recentSalesTotal(s, 7, D(0)), 500, "sale counted");
+  eq(s.salesByDay[String(d0)], 500, "durable per-day record written");
+  s.log = s.log.filter(function (e) { return e.source !== "amazon"; });   // simulate the log evicting the sale
+  eq(E.recentSalesTotal(s, 7, D(0)), 500, "still reported from durable salesByDay after log eviction");
+  var m = E.mergeStates(s, fresh(D(0)), D(0));
+  eq(E.recentSalesTotal(m, 7, D(0)), 500, "survives merge (per-day MAX)");
+  eq(E.recentSalesTotal(E.mergeStates(fresh(D(0)), s, D(0)), 7, D(0)), 500, "order-independent");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");
