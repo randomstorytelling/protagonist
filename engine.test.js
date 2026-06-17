@@ -34,9 +34,9 @@ test("levelFromXp is monotonic and finite for huge xp", function () {
 });
 
 test("rankForLevel respects boundaries", function () {
-  eq(E.rankForLevel(1), "Rookie"); eq(E.rankForLevel(4), "Rookie"); eq(E.rankForLevel(5), "Supernova");
-  eq(E.rankForLevel(10), "Warlord"); eq(E.rankForLevel(18), "Commander"); eq(E.rankForLevel(28), "Yonko");
-  eq(E.rankForLevel(42), "Pirate King"); eq(E.rankForLevel(60), "Joy Boy"); eq(E.rankForLevel(999), "Joy Boy");
+  eq(E.rankForLevel(1), "Responder"); eq(E.rankForLevel(4), "Responder"); eq(E.rankForLevel(5), "Experimenter");
+  eq(E.rankForLevel(10), "Builder"); eq(E.rankForLevel(18), "Master"); eq(E.rankForLevel(28), "Sage");
+  eq(E.rankForLevel(42), "Role Model"); eq(E.rankForLevel(60), "Actualized"); eq(E.rankForLevel(999), "Actualized");
 });
 
 // ---------------------------------------------------------------- multiplier
@@ -148,10 +148,10 @@ test("a single big rep that crosses multiple levels emits one LEVEL_UP with corr
 
 test("rank up fires when crossing a rank boundary", function () {
   var s = fresh();
-  // pile xp to cross into Supernova rank (level >=5). Need ~ enough totalXp.
+  // pile xp to cross into Experimenter rank (level >=5). Need ~ enough totalXp.
   for (var i = 0; i < 6; i++) s = E.applyRep(s, "fin_rep", D(0)).state; // plenty
   assert(E.playerLevel(s) >= 5, "reached >= L5");
-  eq(E.rank(s), "Supernova", "Supernova rank (level >=5) reached");
+  eq(E.rank(s), "Experimenter", "Experimenter rank (level >=5) reached");
 });
 
 test("titles unlock once, persist, and add an income bonus", function () {
@@ -1021,6 +1021,7 @@ test("achievements are 16 leveled tracks; level/progress bounded; tiers earned b
     assert(t.level >= 0 && t.level <= t.maxLevel, "level within [0,max]: " + t.id);
     assert(t.progress >= 0 && t.progress <= 1, "progress bounded: " + t.id);
     assert(t.unlocked === (t.level >= 1), "unlocked iff level>=1: " + t.id);
+    assert(typeof t.how === "string" && t.how.length > 0, "track has a 'how to earn': " + t.id);
   });
   var tr0 = a0.filter(function (t) { return t.id === "training"; })[0];
   eq(tr0.level, 0, "Training starts at level 0 on a fresh save");

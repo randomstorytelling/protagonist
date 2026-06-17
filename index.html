@@ -876,6 +876,7 @@
     $("repList").innerHTML = '<div class="achdetail'+(a.unlocked?' on':'')+(maxed?' maxed':'')+'">'
       + '<div class="achbig">'+a.icon+'</div>'
       + '<div class="achttl">'+esc(a.name)+'</div>'
+      + (a.how ? '<div class="achhow"><b>How to earn:</b> '+esc(a.how)+'</div>' : '')
       + '<div class="achladder">'+ladder+'</div>'
       + (maxed
           ? '<div class="achunlocked">✓ ALL '+a.maxLevel+' LEVELS</div>'

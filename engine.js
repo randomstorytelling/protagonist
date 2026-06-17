@@ -28,15 +28,16 @@
     multiplier: { base: 1.0, perEngineDim: 0.15, max: 1.6 }, // 1.0 .. 1.6 (cap reached at 4 of 5 health dims)
     xpCurve: { baseNeed: 100, growth: 1.25 },               // need(L)=100*1.25^(L-1)
     statPointsPerLevel: 3,
-    // rank ladder = One Piece notoriety, ascending pirate power (keyed to player level)
+    // rank ladder = Lawrence's Human Design 6/3 Generator actualization journey
+    // (3rd-line trial-and-error -> 6th-line role model -> self-actualized), keyed to player level
     ranks: [
-      { rank: "Rookie", minLevel: 1 },
-      { rank: "Supernova", minLevel: 5 },
-      { rank: "Warlord", minLevel: 10 },
-      { rank: "Commander", minLevel: 18 },
-      { rank: "Yonko", minLevel: 28 },
-      { rank: "Pirate King", minLevel: 42 },
-      { rank: "Joy Boy", minLevel: 60 },
+      { rank: "Responder", minLevel: 1 },
+      { rank: "Experimenter", minLevel: 5 },
+      { rank: "Builder", minLevel: 10 },
+      { rank: "Master", minLevel: 18 },
+      { rank: "Sage", minLevel: 28 },
+      { rank: "Role Model", minLevel: 42 },
+      { rank: "Actualized", minLevel: 60 },
     ],
     dailyQuest: { requirements: { physical: 1, mental: 1, spiritual: 1, family: 1, social: 1, financial: 1 }, reward: 50 },
     penalty: { multiplierCap: 1.0 }, // while penalized: NO amplification and NO bonuses on income
@@ -905,13 +906,14 @@
     var sixDays = allSixDaysCount(s), activeDays = activeDaysCount(s);
     function n(x) { return Math.round(x).toLocaleString(); }
     function L(at, name) { return { at: at, name: name }; }
-    // build one leveled track: count tiers passed, progress to the next, full labelled ladder
-    function T(id, name, icon, saga, unit, metric, levels) {
+    // build one leveled track: count tiers passed, progress to the next, full labelled ladder.
+    // `how` = plain-English "how to earn" shown on the detail sheet so every tier is self-explanatory.
+    function T(id, name, icon, saga, unit, metric, levels, how) {
       function fmt(v) { return unit === "$" ? ("$" + n(v)) : unit === "Lv" ? ("Lv " + n(v)) : unit === "d" ? (n(v) + "d") : n(v); }
       var lv = 0; for (var i = 0; i < levels.length; i++) if (metric >= levels[i].at) lv = i + 1;
       var maxed = lv >= levels.length, next = maxed ? null : levels[lv], prevAt = lv > 0 ? levels[lv - 1].at : 0;
       return {
-        id: id, name: name, icon: icon, saga: saga,
+        id: id, name: name, icon: icon, saga: saga, how: how || "",
         levels: levels.map(function (x) { return { at: x.at, name: x.name, label: fmt(x.at) }; }),
         level: lv, maxLevel: levels.length, tierName: lv > 0 ? levels[lv - 1].name : "",
         nextName: next ? next.name : null, unlocked: lv >= 1,
@@ -920,22 +922,54 @@
       };
     }
     return [
-      T("power", "Power", "⚡", "One Piece × DBZ", "", rating, [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")]),
-      T("notoriety", "Notoriety", "🏴‍☠️", "One Piece", "Lv", lvl, [L(5, "Supernova"), L(10, "Warlord"), L(18, "Commander"), L(28, "Yonko"), L(42, "Pirate King"), L(60, "Joy Boy")]),
-      T("fire", "Will of Fire", "🔥", "Naruto", "d", longest, [L(3, "Genin"), L(7, "Chunin"), L(14, "Jonin"), L(30, "Sannin"), L(60, "Kage"), L(100, "Hokage")]),
-      T("training", "Training", "💪", "Dragon Ball Z", "", reps, [L(10, "Warm-Up"), L(50, "Weighted Clothes"), L(100, "Gravity x10"), L(250, "Gravity x100"), L(500, "Hyperbolic Chamber"), L(1000, "Ultra Instinct")]),
-      T("wins", "Big Wins", "🏆", "One Piece", "", big, [L(1, "First Win"), L(3, "The Closer"), L(5, "Conqueror's Haki"), L(10, "Emperor"), L(25, "Living Legend")]),
-      T("treasure", "Treasure", "💎", "Hunter x Hunter", "$", sales, [L(250, "Bounty"), L(500, "Greed Island"), L(1000, "Spirit Bomb"), L(2500, "Roger's Stash"), L(5000, "One Piece")]),
-      T("earning", "Earning Power", "💰", "Vybrance", "Lv", power, [L(3, "Hustler"), L(5, "Rainmaker"), L(10, "Mogul"), L(15, "Tycoon"), L(20, "Kingpin")]),
-      T("hydration", "Hydration", "💧", "Vybrance", "d", metDays, [L(1, "First Sip"), L(7, "Hydrated"), L(30, "Water Sage"), L(90, "Aquaman")]),
-      T("nen", "Nen Mastery", "🌀", "Hunter x Hunter", "Lv", minDim, [L(2, "Ten"), L(3, "Ren"), L(5, "Hatsu"), L(10, "Nen Master")]),
-      T("balance", "Balance", "🎯", "Core", "", sixDays, [L(1, "Whole"), L(5, "Balanced"), L(15, "Renaissance"), L(30, "Ascended")]),
-      T("mind", "Mind", "🧠", "Naruto", "Lv", dimLvl("mental"), [L(3, "Student"), L(5, "Scholar"), L(10, "Sage"), L(15, "Grandmaster")]),
-      T("body", "Body", "🦾", "Dragon Ball Z", "Lv", dimLvl("physical"), [L(3, "Athlete"), L(5, "Warrior"), L(10, "Beast"), L(15, "Titan")]),
-      T("spirit", "Spirit", "🙏", "Naruto", "Lv", dimLvl("spiritual"), [L(3, "Calm"), L(5, "Centered"), L(10, "Sage Mode"), L(15, "Enlightened")]),
-      T("bonds", "Bonds", "🤝", "Core", "Lv", dimLvl("family"), [L(3, "Present"), L(5, "Devoted"), L(10, "Pillar"), L(15, "Patriarch")]),
-      T("influence", "Influence", "🗣️", "Naruto", "Lv", dimLvl("social"), [L(3, "Friendly"), L(5, "Connector"), L(10, "Talk-no-Jutsu"), L(15, "Charismatic")]),
-      T("consistency", "Consistency", "🗓️", "Solo Leveling", "d", activeDays, [L(7, "Week"), L(30, "Month"), L(100, "Centurion"), L(365, "Year of the Player")]),
+      T("power", "Power", "⚡", "One Piece × DBZ", "", rating,
+        [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")],
+        "Raise your Power Rating — it climbs as XP, streaks, sales, and recovery stack."),
+      T("actualization", "Actualization", "🧬", "Human Design 6/3", "Lv", lvl,
+        [L(5, "Experimenter"), L(10, "Builder"), L(18, "Master"), L(28, "Sage"), L(42, "Role Model"), L(60, "Actualized")],
+        "Level up your overall character (total XP across all six dimensions) — the 6/3 Generator path from trial-and-error to self-actualized."),
+      T("fire", "Will of Fire", "🔥", "Naruto", "d", longest,
+        [L(3, "Genin"), L(7, "Chunin"), L(14, "Jonin"), L(30, "Sannin"), L(60, "Kage"), L(100, "Hokage")],
+        "Build your longest daily streak — log at least one rep every single day."),
+      T("training", "Training", "💪", "Dragon Ball Z", "", reps,
+        [L(10, "Warm-Up"), L(50, "Weighted Clothes"), L(100, "Gravity x10"), L(250, "Gravity x100"), L(500, "Hyperbolic Chamber"), L(1000, "Ultra Instinct")],
+        "Log more reps total — every rep in any dimension counts toward the grind."),
+      T("wins", "Big Wins", "🏆", "One Piece", "", big,
+        [L(1, "First Win"), L(3, "The Closer"), L(5, "Conqueror's Haki"), L(10, "Emperor"), L(25, "Living Legend")],
+        "Bank big wins — log a milestone moment (booked gig, closed deal, signed partner)."),
+      T("treasure", "Treasure", "💎", "Hunter x Hunter", "$", sales,
+        [L(250, "Bounty"), L(500, "Greed Island"), L(1000, "Spirit Bomb"), L(2500, "Roger's Stash"), L(5000, "One Piece")],
+        "Drive Vybrance sales — your rolling 7-day Shopify + Amazon revenue."),
+      T("earning", "Earning Power", "💰", "Vybrance", "Lv", power,
+        [L(3, "Hustler"), L(5, "Rainmaker"), L(10, "Mogul"), L(15, "Tycoon"), L(20, "Kingpin")],
+        "Raise your Power Level — Financial-dimension XP from sales and money reps."),
+      T("hydration", "Hydration", "💧", "Vybrance", "d", metDays,
+        [L(1, "First Sip"), L(7, "Hydrated"), L(30, "Water Sage"), L(90, "Aquaman")],
+        "Hit your daily water goal — fill the bar on as many days as you can."),
+      T("nen", "Nen Mastery", "🌀", "Hunter x Hunter", "Lv", minDim,
+        [L(2, "Ten"), L(3, "Ren"), L(5, "Hatsu"), L(10, "Nen Master")],
+        "Level up ALL six dimensions evenly — your weakest dimension sets this tier."),
+      T("balance", "Balance", "🎯", "Core", "", sixDays,
+        [L(1, "Whole"), L(5, "Balanced"), L(15, "Renaissance"), L(30, "Ascended")],
+        "Have days where you train all six dimensions — total perfect-balance days."),
+      T("mind", "Mind", "🧠", "Naruto", "Lv", dimLvl("mental"),
+        [L(3, "Student"), L(5, "Scholar"), L(10, "Sage"), L(15, "Grandmaster")],
+        "Level up your Mental dimension — reading, learning, deep work, therapy."),
+      T("body", "Body", "🦾", "Dragon Ball Z", "Lv", dimLvl("physical"),
+        [L(3, "Athlete"), L(5, "Warrior"), L(10, "Beast"), L(15, "Titan")],
+        "Level up your Physical dimension — workouts, hikes, WHOOP activity, sleep."),
+      T("spirit", "Spirit", "🙏", "Naruto", "Lv", dimLvl("spiritual"),
+        [L(3, "Calm"), L(5, "Centered"), L(10, "Sage Mode"), L(15, "Enlightened")],
+        "Level up your Spiritual dimension — meditation, gratitude, nature, rest."),
+      T("bonds", "Bonds", "🤝", "Core", "Lv", dimLvl("family"),
+        [L(3, "Present"), L(5, "Devoted"), L(10, "Pillar"), L(15, "Patriarch")],
+        "Level up your Family dimension — calls, quality time, showing up for family."),
+      T("influence", "Influence", "🗣️", "Naruto", "Lv", dimLvl("social"),
+        [L(3, "Friendly"), L(5, "Connector"), L(10, "Talk-no-Jutsu"), L(15, "Charismatic")],
+        "Level up your Social dimension — friends, events, networking, reaching out."),
+      T("consistency", "Consistency", "🗓️", "Solo Leveling", "d", activeDays,
+        [L(7, "Week"), L(30, "Month"), L(100, "Centurion"), L(365, "Year of the Player")],
+        "Show up on more days total — every day you log anything counts."),
     ];
   }
   // reconstruct a Power Rating trend for the last `days` from the per-rep log (the recent ledger), so the
