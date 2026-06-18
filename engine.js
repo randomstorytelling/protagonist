@@ -876,7 +876,7 @@
     return Math.round(Math.max(logSum, sbdSum));
   }
 
-  // ============================ POWER RATING — the culmination of all activities ============================
+  // ============================ POWER LEVEL — the culmination of all activities ============================
   // One headline number that sums you up (à la WHOOP Age): total progress + earning power + big wins, scaled
   // by CONSISTENCY (your live streaks) and VITALITY (WHOOP recovery). Deterministic & pure; it can dip if
   // streaks break or recovery tanks, so it stays honest rather than only ratcheting up.
@@ -893,7 +893,7 @@
     var r = Math.round((core + earn + wins) * consistency * vitality);
     return Number.isFinite(r) ? Math.max(0, Math.min(r, 9e15)) : 0;   // never NaN/Infinity, even on a corrupt save
   }
-  // power stages = Luffy's gears (One Piece): the Power Rating tier you're in == the gear you've unlocked.
+  // power stages = Luffy's gears (One Piece): the Power Level tier you're in == the gear you've unlocked.
   var POWER_TIERS = [
     { min: 0, name: "Base Form" }, { min: 600, name: "Gear 2" }, { min: 1800, name: "Gear 3" },
     { min: 4500, name: "Gear 4" }, { min: 11000, name: "Gear 5" }, { min: 28000, name: "Sun God Nika" },
@@ -991,9 +991,9 @@
       // NOTE: this ladder intentionally has ONE extra tier vs POWER_TIERS (the Power-card gear stages): the DBZ
       // "It's Over 9,000!" easter egg at 9000. POWER_TIERS stays pure Luffy gears for the headline card; this
       // achievement track is the worlds-mixed view. The divergence is deliberate, not drift — don't "unify" it away.
-      T("power", "Power", "⚡", "One Piece × DBZ", "", rating,
+      T("power", "Power Level", "⚡", "One Piece × DBZ", "", rating,
         [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")],
-        "Raise your Power Rating — it climbs as XP, streaks, sales, and recovery stack."),
+        "Raise your Power Level — the culmination number; it climbs as XP, streaks, sales, and recovery stack."),
       T("actualization", "Actualization", "🧬", "Human Design 6/3", "Lv", lvl,
         [L(5, "Experimenter"), L(10, "Builder"), L(18, "Master"), L(28, "Sage"), L(42, "Role Model"), L(60, "Actualized")],
         "Level up your overall character (total XP across all six dimensions) — the 6/3 Generator path from trial-and-error to self-actualized."),
@@ -1011,7 +1011,7 @@
         "Drive Vybrance sales — your rolling 7-day Shopify + Amazon revenue."),
       T("earning", "Earning Power", "💰", "Vybrance", "Lv", power,
         [L(3, "Hustler"), L(5, "Rainmaker"), L(10, "Mogul"), L(15, "Tycoon"), L(20, "Kingpin")],
-        "Raise your Power Level — Financial-dimension XP from sales and money reps."),
+        "Raise your Earning Power — Financial-dimension XP from sales and money reps."),
       T("hydration", "Hydration", "💧", "Vybrance", "d", metDays,
         [L(1, "First Sip"), L(7, "Hydrated"), L(30, "Water Sage"), L(90, "Aquaman")],
         "Hit your daily water goal — fill the bar on as many days as you can."),
@@ -1041,7 +1041,7 @@
         "Show up on more days total — every day you log anything counts."),
     ];
   }
-  // reconstruct a Power Rating trend for the last `days` from the per-rep log (the recent ledger), so the
+  // reconstruct a Power Level trend for the last `days` from the per-rep log (the recent ledger), so the
   // cumulative shape is exact for logged days; progress older than the log sits at a flat floor. The series is
   // scaled so its final point equals the live powerRating (endpoint-accurate). Pure.
   function ratingTrend(state, days, now) {
@@ -1280,7 +1280,7 @@
       case "order":
       case "vybrance_sale": {
         // a real Vybrance sale = a "seed for growth": it credits Financial XP, which raises BOTH the overall
-        // level (totalXp) and the Power Level (incomeXp). Deduped by order id, so each sale counts once.
+        // level (totalXp) and Earning Power (incomeXp). Deduped by order id, so each sale counts once.
         var amt = num(a.amount, 0);
         var src = a.source || "shopify";
         var srcLabel = src === "amazon" ? "Amazon" : (src === "shopify" ? "Shopify" : src);

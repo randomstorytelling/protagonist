@@ -243,7 +243,7 @@
   .reprow .v{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;}
   .big-badge{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:0.1em;color:#06120d;background:var(--gold);padding:2px 5px;border-radius:3px;margin-left:7px;vertical-align:1px;}
 
-  /* ⚡ Power Rating marquee — the culmination number */
+  /* ⚡ Power Level marquee — the culmination number */
   .rating{background:
     radial-gradient(120% 90% at 50% -20%, rgba(95,224,255,0.14), transparent 65%),
     var(--panel);border-color:rgba(95,224,255,0.45);
@@ -437,7 +437,7 @@
 
   <!-- ===== HERO: your culmination number ===== -->
   <div class="panel rating" id="ratingPanel">
-    <div class="ph"><span class="t">⚡ Power Rating</span><span class="meta" id="ratingTier">—</span></div>
+    <div class="ph"><span class="t">⚡ Power Level</span><span class="meta" id="ratingTier">—</span></div>
     <div class="ratingrow">
       <div class="ratingnum" id="ratingNum">0</div>
       <div class="ratingside">
@@ -523,7 +523,7 @@
   </div>
 
   <div class="panel hero">
-    <div class="ph"><span class="t">⚡ Power Level</span><span class="meta">capacity to earn</span></div>
+    <div class="ph"><span class="t">💰 Earning Power</span><span class="meta">capacity to earn</span></div>
     <div class="big" id="incLvl">Lv 1</div>
     <div class="sub" id="incSub">0 power · grows as your activities stack</div>
     <div class="bar herobar"><i id="incBar" style="width:0%"></i></div>
@@ -1072,7 +1072,7 @@
     $("satisFoot").innerHTML = foot;
   }
 
-  // ---- ⚡ Power Rating — the culmination number ----
+  // ---- ⚡ Power Level — the culmination number ----
   function renderRating(){
     var pr = G.powerRating(st, now()), tier = G.powerTier(pr), gain = G.powerGain(st, 7, now());
     $("ratingNum").textContent = pr.toLocaleString();
@@ -1425,7 +1425,7 @@
     ctx.fillStyle="#5fe0ff"; ctx.font="600 42px ui-monospace,Menlo,monospace"; ctx.fillText("⚡ THE SYSTEM", W/2, 118);
     ctx.fillStyle="#e6f4ff"; ctx.font="700 66px -apple-system,Helvetica,Arial,sans-serif"; ctx.fillText(st.player.name, W/2, 198);
     var pr=G.powerRating(st,now()), tier=G.powerTier(pr);
-    ctx.fillStyle="#7d9bbd"; ctx.font="500 30px ui-monospace,monospace"; ctx.fillText("POWER RATING", W/2, 292);
+    ctx.fillStyle="#7d9bbd"; ctx.font="500 30px ui-monospace,monospace"; ctx.fillText("POWER LEVEL", W/2, 292);
     ctx.fillStyle="#5fe0ff"; ctx.font="700 168px ui-monospace,monospace"; ctx.fillText(pr.toLocaleString(), W/2, 452);
     ctx.fillStyle="#ffd76a"; ctx.font="600 42px ui-monospace,monospace"; ctx.fillText(tier.name.toUpperCase()+"  ·  RANK "+G.rank(st), W/2, 524);
     drawShareHexagon(ctx, W/2, 790, 200);
@@ -1441,7 +1441,7 @@
       try{
         var file = new File([blob], "protagonist-system.png", { type:"image/png" });
         if(navigator.canShare && navigator.canShare({ files:[file] })){
-          navigator.share({ files:[file], title:"The System", text:"My Power Rating ⚡" }).catch(function(){});
+          navigator.share({ files:[file], title:"The System", text:"My Power Level ⚡" }).catch(function(){});
           return;
         }
       }catch(e){}

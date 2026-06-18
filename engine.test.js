@@ -968,7 +968,7 @@ test("Vybrance sales credit as seeds, raise overall + power level, sum over 7 da
   ];
   var s = E.ingestExternal(s0, orders, D(0)).state;
   assert(s.totalXp > 0, "sales raise overall XP (the overall level)");
-  assert(s.incomeXp > 0, "sales raise Power Level (incomeXp)");
+  assert(s.incomeXp > 0, "sales raise Earning Power (incomeXp)");
   eq(s.bigWins, 1, "a $240 order is a big win");
   eq(E.recentSalesTotal(s, 7, D(0)), 300, "7-day sales total sums order amounts");
   var s2 = E.ingestExternal(s, orders, D(0)).state;
