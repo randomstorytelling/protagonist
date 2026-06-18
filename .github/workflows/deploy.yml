@@ -39,7 +39,7 @@ jobs:
       - name: Assemble site (app shell only; GitHub Pages just redirects to the Firebase Hosting canonical)
         run: |
           mkdir -p _site
-          cp index.html engine.js manifest.json service-worker.js icon.svg _site/
+          cp index.html engine.js manifest.json service-worker.js icon.svg icon-180.png icon-192.png icon-512.png _site/
           # WHOOP is PRIVATE now (cloud feed writes it to per-user Firestore) — never publish biometrics to Pages.
       - uses: actions/configure-pages@v5
         with:

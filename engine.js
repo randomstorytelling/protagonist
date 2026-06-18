@@ -129,8 +129,15 @@
     { id: "audition", label: "Auditions", dim: "financial", baseXp: 20, kw: ["audition", "self-tape", "selftape", "self tape", "casting", "submitted", "callback", "read for", "voiceover"] },
     { id: "content", label: "Content", dim: "financial", baseXp: 18, kw: ["posted", "content", "tiktok", "reel", "filmed", "shoot", "youtube", "instagram", "story", "edited a video"] },
     { id: "admin", label: "Money admin", dim: "financial", baseXp: 10, kw: ["invoice", "reconcile", "taxes", "accounting", "bookkeeping", "expenses", "budget", "sales report", "mcf", "fulfilled order", "shipped order"] },
-    { id: "win", label: "Big win", dim: "financial", baseXp: 300, big: true, kw: ["booked", "closed a", "signed", "landed", "sold", "got the gig", "got the role", "won the", "new client", "new account", "got hired", "got paid"] },
+    // Big win is detected by a dedicated rule (isBigWin), NOT this kw list — see classifyActivity. These standalone
+    // phrases are the unambiguous ones; everything else needs a win ACTION + win OBJECT so benign phrases like
+    // "signed up for a class" / "landed at the airport" / "booked a dentist appointment" don't bank a +300 win.
+    { id: "win", label: "Big win", dim: "financial", baseXp: 300, big: true, kw: ["got the gig", "got the role", "got the part", "got hired", "got paid", "new client", "new account", "brand deal", "sold out", "made a sale", "won the"] },
   ];
+  // big-win discriminators: a real win needs an ACTION on a win OBJECT (e.g. "booked a commercial", "closed a
+  // wholesale account", "signed a retailer", "landed a brand deal"), or one of the win category's standalone phrases.
+  var WIN_ACTIONS = ["booked", "closed", "signed", "landed", "sold", "scored", "secured", "clinched", "inked", "won", "nabbed"];
+  var WIN_OBJECTS = ["gig", "role", "part", "job", "show", "commercial", "campaign", "client", "account", "deal", "contract", "sale", "sales", "partner", "agent", "brand", "sponsor", "sponsorship", "wholesale", "retailer", "retainer", "booking"];
 
   var TITLES = [
     { id: "awakened", name: "Awakened", bonusPct: 0, test: function (s) { return repsTotal(s) >= 1; } },
@@ -281,7 +288,7 @@
       activeTitle: null,
       history: {},
       streak: { current: 0, longest: 0, lastDay: null },
-      daily: { day: today, completed: false },
+      daily: { day: today, completed: false, rewardedDay: null }, // rewardedDay = the day the +50 was banked (so a cross-device merge credits it exactly once)
       penalty: { active: false, sinceDay: null },
       bigWins: 0,
       epoch: 0,                   // bumped on reset; a higher epoch wins a merge wholesale (reset is a deliberate discontinuity)
@@ -295,6 +302,9 @@
       // WHOOP-derived: 25-day avg day-strain ~10 with frequent 15+ days (basketball, lifting, hikes) => "active".
       profile: { heightIn: 77, weightLb: 208, activityTier: "active" },
       salesByDay: {},             // dayIndex -> total Vybrance sales $ that day (durable; survives log eviction)
+      // Generator signature: a once-a-day subjective gut-read of how the day FELT (1 Drained .. 4 Satisfied).
+      // Objective output is XP; this is the feeling that tells a Generator the day was correct. Never penalizes.
+      satisfaction: { byDay: {} }, // dayIndex -> level 1..4
     };
   }
 
@@ -337,6 +347,12 @@
     if (s.daily && typeof s.daily === "object") {
       out.daily.day = Math.min(num(s.daily.day, today), today); // future-dated -> clamp to today (anti clock-glitch freeze)
       out.daily.completed = !!s.daily.completed;
+      out.daily.rewardedDay = (s.daily.rewardedDay != null) ? Math.min(num(s.daily.rewardedDay, -1), today) : null;
+      // INVARIANT: a completed day ALWAYS banked its +50 (via _credit or the merge), so rewardedDay MUST equal
+      // daily.day for any completed day. Enforcing it here both (a) backfills legacy pre-rewardedDay saves and
+      // (b) collapses any rewardedDay<->day desync from a torn/corrupt write, so the merge's "credit the +50 once"
+      // guard can never re-add a reward for an already-rewarded day (keeps mergeStates idempotent on such saves).
+      if (out.daily.completed) out.daily.rewardedDay = out.daily.day;
     }
     if (s.penalty && typeof s.penalty === "object") {
       out.penalty.active = !!s.penalty.active;
@@ -392,12 +408,21 @@
     if (s.salesByDay && typeof s.salesByDay === "object") {
       for (var sdk in s.salesByDay) if (Object.prototype.hasOwnProperty.call(s.salesByDay, sdk)) {
         var sdd = Number(sdk), sdv = nonNeg(s.salesByDay[sdk]);
-        if (Number.isFinite(sdd) && sdd <= today + 1 && sdv > 0) out.salesByDay[String(Math.floor(sdd))] = sdv;
+        // bound to the recent window (same as mergeStates) so the durable record can't grow the doc unbounded
+        if (Number.isFinite(sdd) && sdd <= today + 1 && sdd >= today - 400 && sdv > 0) out.salesByDay[String(Math.floor(sdd))] = sdv;
       }
     }
     var logByDay = {};
-    (out.log || []).forEach(function (e) { if (e && e.dim === "financial" && e.amount != null) { var d = num(e.day, null); if (d === null || d > today + 1) return; var k = String(Math.floor(d)); logByDay[k] = (logByDay[k] || 0) + nonNeg(e.amount); } });
+    (out.log || []).forEach(function (e) { if (e && e.dim === "financial" && e.amount != null) { var d = num(e.day, null); if (d === null || d > today + 1 || d < today - 400) return; var k = String(Math.floor(d)); logByDay[k] = (logByDay[k] || 0) + nonNeg(e.amount); } });
     for (var lbk in logByDay) out.salesByDay[lbk] = Math.max(nonNeg(out.salesByDay[lbk]), Math.round(logByDay[lbk] * 100) / 100);
+    // satisfaction check-ins: finite day keys (no future), level clamped to 1..4, bounded to recent days
+    out.satisfaction = { byDay: {} };
+    if (s.satisfaction && typeof s.satisfaction === "object" && s.satisfaction.byDay && typeof s.satisfaction.byDay === "object") {
+      for (var stk in s.satisfaction.byDay) if (Object.prototype.hasOwnProperty.call(s.satisfaction.byDay, stk)) {
+        var std = Number(stk), stv = Math.round(num(s.satisfaction.byDay[stk], 0));
+        if (Number.isFinite(std) && std <= today + 1 && std >= today - 400 && stv >= 1 && stv <= 4) out.satisfaction.byDay[String(Math.floor(std))] = stv;
+      }
+    }
     out.version = SCHEMA_VERSION;
     recomputeStreak(out, today); // streak is always derived, never trusted from disk
     return out;
@@ -419,10 +444,12 @@
       DIMENSIONS.forEach(function (d) { day[d] = nonNeg(src[d]); });
       s.history[String(di)] = day;
     }
-    if (Array.isArray(v1.log)) s.log = v1.log.map(function (e) {
-      var ts = num(e.ts, null), dy = ts !== null ? dayIndex(new Date(ts)) : null;
-      return { ts: ts, day: Number.isFinite(dy) ? dy : null, dim: e.dim, repId: e.repId || null, name: e.name, baseXp: num(e.xp, 0), mult: num(e.mult, 1), xp: num(e.xp, 0) };
-    }).slice(0, LOG_CAP);
+    // DON'T carry the v1 ledger forward: v1's e.xp was the already-AMPLIFIED credited xp (it even stored mult),
+    // but v2's logAgg rebuilds dims/totalXp from baseXp on every merge — copying amplified xp into baseXp would
+    // silently re-inflate a v1 user's totals the first time they sync across devices. dims/totalXp/incomeXp/
+    // history are already migrated faithfully from v1's own aggregates above; we only lose old display rows, not
+    // progress. (v1 entries also lack extKey/amount, so they could never dedup or back a durable sales record.)
+    s.log = [];
     s.statPoints.available = Math.max(0, (levelFromXp(s.totalXp).level - 1) * CONFIG.statPointsPerLevel);
     recomputeStreak(s, safeToday(now));
     return s;
@@ -456,9 +483,10 @@
   function reconcileTo(s, today) {
     s = clone(s);
     if (!Number.isFinite(today)) today = num(s.daily && s.daily.day, 0);
-    if (!s.daily) s.daily = { day: today, completed: false };
+    if (!s.daily) s.daily = { day: today, completed: false, rewardedDay: null };
     var last = num(s.daily.day, today);
     var created = num(s.player.createdDay, today);
+    var prevReward = num(s.daily.rewardedDay, null); // the last day the +50 was banked; carry it across the roll-forward
     if (today > last) {
       var missed = false;
       // the last opened day: penalize if it's past grace, wasn't completed, and history doesn't show it met
@@ -466,12 +494,17 @@
       // any fully-skipped intermediate day (no engagement) beyond the grace day
       if (today - last > 1 && (today - 1) > created) missed = true;
       if (missed) s.penalty = { active: true, sinceDay: today };
-      s.daily = { day: today, completed: isDailyMet(s, today) };
+      s.daily = { day: today, completed: isDailyMet(s, today), rewardedDay: prevReward };
     } else if (today < last) {
-      s.daily = { day: today, completed: isDailyMet(s, today) }; // clock moved back -> resync, no penalty
+      s.daily = { day: today, completed: isDailyMet(s, today), rewardedDay: prevReward }; // clock moved back -> resync, no penalty
     } else {
       s.daily.completed = s.daily.completed || isDailyMet(s, today);
     }
+    // A fully-met day must never sit under an active penalty — whether it became met via a live rep, a recovery
+    // waiver, or a merge of two devices' partial days. Doing the full day's work IS the recovery, so clear it.
+    // This makes penalty-clear path-independent (the _credit edge-clear stays for the live-rep celebration),
+    // so the income multiplier/bonuses are never silently suppressed on a completed day. (no-shame ethic)
+    if (s.daily.completed && isPenalized(s)) s.penalty = { active: false, sinceDay: null };
     return s;
   }
   function reconcile(s, now) { return reconcileTo(s, effectiveDay(s, now)); }
@@ -527,13 +560,18 @@
 
     // RESET is a deliberate discontinuity, not progress: a higher epoch wins the whole save (no merge), so
     // "reset save" actually propagates across devices instead of being silently undone by the monotonic union.
-    if (A.epoch !== B.epoch) { var hi = clone(A.epoch > B.epoch ? A : B); recomputeStreak(hi, safeToday(now)); hi.version = SCHEMA_VERSION; return hi; }
+    // GUARD: reset bumps the epoch by exactly 1, so a gap this large means a corrupt/garbage epoch — refuse to
+    // let it wipe a healthy device; fall through to the normal lossless merge and pin epoch to the lower sane value.
+    var EPOCH_TRUST_GAP = 10000;
+    if (A.epoch !== B.epoch && Math.abs(A.epoch - B.epoch) <= EPOCH_TRUST_GAP) {
+      var hi = clone(A.epoch > B.epoch ? A : B); recomputeStreak(hi, safeToday(now)); hi.version = SCHEMA_VERSION; return hi;
+    }
 
     var out = clone(A);
     out.player.createdDay = Math.min(A.player.createdDay, B.player.createdDay); // earliest birth wins
     if (B.player.name && B.player.name !== "Lawrence" && (!A.player.name || A.player.name === "Lawrence")) out.player.name = B.player.name;
     out.player.initials = initialsOf(out.player.name);
-    out.epoch = A.epoch;
+    out.epoch = Math.min(A.epoch, B.epoch); // equal in the normal case; lower (sane) value if an outlier epoch was rejected above
 
     // log: union deduped by extKey (external/deduped reps) else (ts,dim,name,xp), newest-first. Build the
     // FULL deduped union FIRST and aggregate from THAT (gU below); only AFTER do we slice for storage. The
@@ -651,13 +689,40 @@
       if (v > 0) out.salesByDay[String(Math.floor(d))] = v;
     });
 
+    // satisfaction check-ins: union per day; on a same-day conflict take the MAX level (deterministic and
+    // order-independent — you rarely re-rate the same day on two devices). Bounded to the recent window.
+    out.satisfaction = { byDay: {} };
+    var satKeys = {};
+    [A.satisfaction && A.satisfaction.byDay, B.satisfaction && B.satisfaction.byDay].forEach(function (mm) { for (var k in (mm || {})) if (Object.prototype.hasOwnProperty.call(mm, k)) satKeys[k] = 1; });
+    Object.keys(satKeys).forEach(function (dk) {
+      var d = Number(dk); if (!Number.isFinite(d) || d > sbdToday + 1 || d < sbdToday - 400) return;
+      var av = (A.satisfaction && A.satisfaction.byDay) ? num(A.satisfaction.byDay[dk], 0) : 0;
+      var bv = (B.satisfaction && B.satisfaction.byDay) ? num(B.satisfaction.byDay[dk], 0) : 0;
+      var v = Math.round(Math.max(av, bv));
+      if (v >= 1 && v <= 4) out.satisfaction.byDay[String(Math.floor(d))] = v;
+    });
+
     // daily: same day -> completed if EITHER did; else the later day's record
-    if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed) };
-    else out.daily = (A.daily.day > B.daily.day) ? { day: A.daily.day, completed: A.daily.completed } : { day: B.daily.day, completed: B.daily.completed };
+    if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed), rewardedDay: null };
+    else out.daily = (A.daily.day > B.daily.day) ? { day: A.daily.day, completed: A.daily.completed, rewardedDay: null } : { day: B.daily.day, completed: B.daily.completed, rewardedDay: null };
+    // rewardedDay = the latest day either device banked the +50 (used just below to credit a split completion once)
+    var mReward = Math.max(num(A.daily.rewardedDay, -1), num(B.daily.rewardedDay, -1));
+    out.daily.rewardedDay = mReward < 0 ? null : mReward;
 
     // penalty: cleared if EITHER device cleared it (never re-penalize a device that already recovered)
     var pActive = !!(A.penalty.active && B.penalty.active);
     out.penalty = { active: pActive, sinceDay: pActive ? Math.max(num(A.penalty.sinceDay, 0), num(B.penalty.sinceDay, 0)) : null };
+
+    // The +50 daily reward is folded into totalXp (NOT the log), so the aggregate rebuild above preserves it only
+    // for a device that actually completed the day alone. If the merged history is daily-met but neither device
+    // completed solo (X did 3 dims, Y the other 3), no +50 was ever banked — credit it exactly once here, marked by
+    // rewardedDay so a re-merge can't double it. Also mirror the path-independent penalty-clear for a complete day.
+    var mDay = out.daily.day;
+    if (isDailyMet(out, mDay)) {
+      out.daily.completed = true;
+      if (out.daily.rewardedDay !== mDay) { out.totalXp += CONFIG.dailyQuest.reward; out.daily.rewardedDay = mDay; }
+      if (out.penalty.active) out.penalty = { active: false, sinceDay: null };
+    }
 
     // profile (build/activity): deterministic, order-independent pick — most-recently-active device, then
     // most-progressed, then heavier weight, then a stable serialization. (Both devices normally hold the same
@@ -720,6 +785,7 @@
     if (!s.daily.completed && isDailyMet(s, today)) {
       s.daily.completed = true;
       s.totalXp += CONFIG.dailyQuest.reward;
+      s.daily.rewardedDay = today;   // mark the bank so a later cross-device merge won't re-credit (or drop) the +50
       events.push({ type: "DAILY_COMPLETE", reward: CONFIG.dailyQuest.reward });
       if (isPenalized(s)) { s.penalty = { active: false, sinceDay: null }; events.push({ type: "PENALTY_CLEARED" }); }
     }
@@ -922,6 +988,9 @@
       };
     }
     return [
+      // NOTE: this ladder intentionally has ONE extra tier vs POWER_TIERS (the Power-card gear stages): the DBZ
+      // "It's Over 9,000!" easter egg at 9000. POWER_TIERS stays pure Luffy gears for the headline card; this
+      // achievement track is the worlds-mixed view. The divergence is deliberate, not drift — don't "unify" it away.
       T("power", "Power", "⚡", "One Piece × DBZ", "", rating,
         [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")],
         "Raise your Power Rating — it climbs as XP, streaks, sales, and recovery stack."),
@@ -1296,12 +1365,26 @@
     return new RegExp("(^|[^a-z0-9])" + esc, "i").test(t);
   }
 
+  // is this text a real big win? Standalone win phrase, OR a win action applied to a win object. Pure.
+  function isBigWin(t) {
+    var win = CATEGORIES.filter(function (c) { return c.id === "win"; })[0];
+    if (win) { for (var i = 0; i < win.kw.length; i++) if (kwHit(t, win.kw[i])) return true; }
+    var act = false, obj = false;
+    for (var a = 0; a < WIN_ACTIONS.length; a++) if (kwHit(t, WIN_ACTIONS[a])) { act = true; break; }
+    if (!act) return false;
+    for (var o = 0; o < WIN_OBJECTS.length; o++) if (kwHit(t, WIN_OBJECTS[o])) { obj = true; break; }
+    return act && obj;
+  }
+
   // classify a free-text activity into {dim, category, xp, big, confidence}. Pure.
   function classifyActivity(text) {
     var t = " " + String(text || "").toLowerCase() + " ";
     if (!t.trim()) return null;
+    // big win first, via the dedicated discriminator (not the generic kw count)
+    if (isBigWin(t)) return { dim: "financial", category: "Big win", categoryId: "win", xp: 300, big: true, confidence: 0.9, matched: 2 };
     var best = null, bestScore = 0;
     CATEGORIES.forEach(function (c) {
+      if (c.id === "win") return; // handled above; its bare stems must not match here
       var hits = 0;
       c.kw.forEach(function (k) { if (kwHit(t, k)) hits++; });
       if (hits > bestScore) { bestScore = hits; best = c; }
@@ -1340,6 +1423,80 @@
   function setActiveTitle(state, id) {
     if (!TITLE_BY_ID[id] || state.unlockedTitles.indexOf(id) === -1) return state;
     var s = clone(state); s.activeTitle = id; return s;
+  }
+
+  // ======================= Human Design — satisfaction (signature) + sacral response =======================
+  // SATISFACTION: a Generator's success signal is the FEELING that the day was correct, not just the XP output.
+  // Once-a-day, one-tap, 1 Drained .. 4 Satisfied. Never penalizes or gates anything; it's a mirror, not a score.
+  function setSatisfaction(state, level, now) {
+    var lvl = Math.round(num(level, 0));
+    if (lvl < 1 || lvl > 4) return { state: state, ok: false };
+    var s = clone(state);
+    if (!s.satisfaction || typeof s.satisfaction !== "object") s.satisfaction = { byDay: {} };
+    if (!s.satisfaction.byDay) s.satisfaction.byDay = {};
+    s.satisfaction.byDay[String(effectiveDay(s, now))] = lvl;
+    return { state: s, ok: true };
+  }
+  function satisfactionToday(state, now) {
+    var by = (state && state.satisfaction && state.satisfaction.byDay) || {};
+    var v = num(by[String(effectiveDay(state, now))], null);
+    return (v >= 1 && v <= 4) ? Math.round(v) : null;
+  }
+  // last `days` of satisfaction as {day, level|null}, oldest..today (for the sparkline)
+  function satisfactionTrend(state, days, now) {
+    var today = effectiveDay(state, now), n = Math.max(1, num(days, 7));
+    var by = (state && state.satisfaction && state.satisfaction.byDay) || {};
+    var out = [];
+    for (var d = today - (n - 1); d <= today; d++) { var v = num(by[String(d)], null); out.push({ day: d, level: (v >= 1 && v <= 4) ? Math.round(v) : null }); }
+    return out;
+  }
+  // soft, NON-penalizing frustration early-warning (the not-self theme): warn only when the last few RATED days
+  // average low. Purely advisory — surfaces a gentle "respond differently" nudge, never gates or punishes.
+  function frustrationSignal(state, now) {
+    var tr = satisfactionTrend(state, 5, now).filter(function (x) { return x.level != null; });
+    if (tr.length < 3) return { warn: false, avg: null, rated: tr.length };
+    var sum = 0; tr.forEach(function (x) { sum += x.level; });
+    var avg = sum / tr.length;
+    return { warn: avg <= 2, avg: Math.round(avg * 10) / 10, rated: tr.length };
+  }
+
+  // SACRAL RESPONSE: Generators are designed to RESPOND, not initiate — so instead of a blank picker, the System
+  // PRESENTS one rep at a time for a gut yes/no. This returns the ORDERED candidate queue (UI walks it on "no").
+  // Ranking: dims still unmet for today's quest come first (a YES advances the quest), then the dim touched least;
+  // WHOOP zone tilts it — red floats restorative dims/reps to the front ("recover"), green sorts by highest XP
+  // ("you're primed, spend it"). Big-win reps are excluded (those are momentous, logged deliberately). Pure.
+  var RESTORATIVE_REPS = ["phys_sleep", "phys_mobility", "spir_rest", "spir_meditate", "spir_nature", "fam_time", "soc_friend"];
+  function sacralQueue(state, now) {
+    var s = (state && typeof state === "object") ? state : {};
+    if (!s.history) return [];   // no state to rank against -> empty queue (don't throw on a falsy/partial state)
+    var today = effectiveDay(s, now);
+    var h = repsOn(s, today), req = CONFIG.dailyQuest.requirements;
+    var zone = (s.whoop && s.whoop.zone) || "unknown";
+    var dimsByNeed = DIMENSIONS.slice().sort(function (a, b) {
+      var ma = reqMetForDim(s, today, a, (h[a] || 0), req[a] || 0) ? 1 : 0;
+      var mb = reqMetForDim(s, today, b, (h[b] || 0), req[b] || 0) ? 1 : 0;
+      if (ma !== mb) return ma - mb;            // unmet-today dims first
+      return (h[a] || 0) - (h[b] || 0);          // then the dim you've touched least today
+    });
+    if (zone === "red") dimsByNeed.sort(function (a, b) { // on red, float restorative dims to the front (still stable-ish)
+      var ra = (a === "spiritual" || a === "physical") ? 0 : 1, rb = (b === "spiritual" || b === "physical") ? 0 : 1;
+      return ra - rb;
+    });
+    var queue = [];
+    dimsByNeed.forEach(function (d) {
+      var reps = repsForDim(d).filter(function (r) { return !r.big; });
+      reps.sort(function (a, b) {
+        if (zone === "red") {
+          var ra = RESTORATIVE_REPS.indexOf(a.id) !== -1 ? 0 : 1, rb = RESTORATIVE_REPS.indexOf(b.id) !== -1 ? 0 : 1;
+          if (ra !== rb) return ra - rb;
+          return a.xp - b.xp;                     // gentler reps first when depleted
+        }
+        if (zone === "green") return b.xp - a.xp; // primed: biggest reps first
+        return 0;
+      });
+      reps.forEach(function (r) { queue.push({ id: r.id, dim: r.dim, name: r.name, xp: r.xp }); });
+    });
+    return queue;
   }
 
   // ---------------------------------------------------------------- public API
@@ -1391,6 +1548,11 @@
     logActivity: logActivity,
     allocateStat: allocateStat,
     setActiveTitle: setActiveTitle,
+    setSatisfaction: setSatisfaction,
+    satisfactionToday: satisfactionToday,
+    satisfactionTrend: satisfactionTrend,
+    frustrationSignal: frustrationSignal,
+    sacralQueue: sacralQueue,
     dayIndex: dayIndex,
     effectiveDay: effectiveDay,
     levelFromXp: levelFromXp,

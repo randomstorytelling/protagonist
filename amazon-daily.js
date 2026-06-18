@@ -91,30 +91,10 @@ async function spapiDaySales(date) {
   return Math.round(total * 100) / 100;
 }
 
-async function main() {
-  var args = process.argv.slice(2);
-  var dry = args.indexOf("--dry") !== -1; args = args.filter(function (a) { return a !== "--dry"; });
-  var spapi = args.indexOf("--spapi") !== -1; args = args.filter(function (a) { return a !== "--spapi"; });
-
-  var explicit = args.filter(function (a) { return /^\d{4}-\d{2}-\d{2}$/.test(a); })[0];
-  // AUTO pulls the just-CLOSED day (yesterday) so the figure is final; manual/bridge defaults to today.
-  var date = explicit || (spapi ? shiftYMD(chicagoYMD(new Date()), -1) : chicagoYMD(new Date()));
-
-  var amount;
-  if (spapi) {
-    amount = await spapiDaySales(date);
-    if (amount === null) { console.log("Amazon SP-API not configured yet (seed " + AMZ_DOC + ") — skipping " + date); return; }
-    console.log("SP-API: Amazon " + date + " ordered product sales = $" + amount);
-  } else {
-    amount = parseFloat(args[0]);
-    if (!(amount >= 0)) { console.error("usage: node amazon-daily.js <amountUSD> [YYYY-MM-DD] [--dry|--spapi]"); process.exit(2); }
-  }
-
-  // a $0 / no-sales day is NOT a sale — skip it (no phantom floor XP, and no permanent dedup lock on the day)
+// credit ONE closed day's sales (idempotent via the per-day dedup id). $0 days are skipped (no phantom XP, no lock).
+async function creditDay(date, amount, dry) {
   if (!(amount > 0)) { console.log("Amazon " + date + ": $0 / no sales — nothing to credit"); return; }
-
   var act = { source: "amazon", kind: "sale", id: "amzn-day-" + date, amount: Math.round(amount * 100) / 100 };
-
   if (dry) {
     var rr = E.ingestExternal(E.newState("Lawrence", new Date()), [act], new Date());
     var dc = (rr.credited || [])[0] || {};
@@ -126,6 +106,41 @@ async function main() {
   if (!res.credited.length) { console.log("Amazon " + date + " $" + amount + " already credited — no-op"); return; }
   var c = res.credited[0];
   console.log("credited Amazon " + date + ": +" + c.xp + " " + c.dim + "  \"" + c.name + "\"  | cloud now: totalXp " + res.state.totalXp + ", power " + res.state.incomeXp + ", 7d-sales $" + E.recentSalesTotal(res.state, 7, new Date()));
+}
+
+async function main() {
+  var args = process.argv.slice(2);
+  var dry = args.indexOf("--dry") !== -1; args = args.filter(function (a) { return a !== "--dry"; });
+  var spapi = args.indexOf("--spapi") !== -1; args = args.filter(function (a) { return a !== "--spapi"; });
+  var explicit = args.filter(function (a) { return /^\d{4}-\d{2}-\d{2}$/.test(a); })[0];
+
+  if (spapi && !explicit) {
+    // BACKFILL the last few CLOSED days (yesterday back N). GitHub scheduled runs are best-effort — a skipped or
+    // delayed run would otherwise drop that day's sales forever (the next run only looks at the new yesterday).
+    // Re-crediting an already-processed day is a guaranteed no-op thanks to the per-day dedup id.
+    var BACKFILL_DAYS = 4;
+    var y = shiftYMD(chicagoYMD(new Date()), -1);
+    for (var i = 0; i < BACKFILL_DAYS; i++) {
+      var d = shiftYMD(y, -i);
+      var amt = await spapiDaySales(d);
+      if (amt === null) { console.log("Amazon SP-API not configured yet (seed " + AMZ_DOC + ") — skipping"); return; }
+      console.log("SP-API: Amazon " + d + " ordered product sales = $" + amt);
+      await creditDay(d, amt, dry);
+    }
+    return;
+  }
+
+  var date = explicit || chicagoYMD(new Date());   // manual/bridge defaults to today; explicit date as given
+  var amount;
+  if (spapi) {
+    amount = await spapiDaySales(date);
+    if (amount === null) { console.log("Amazon SP-API not configured yet (seed " + AMZ_DOC + ") — skipping " + date); return; }
+    console.log("SP-API: Amazon " + date + " ordered product sales = $" + amount);
+  } else {
+    amount = parseFloat(args[0]);
+    if (!(amount >= 0)) { console.error("usage: node amazon-daily.js <amountUSD> [YYYY-MM-DD] [--dry|--spapi]"); process.exit(2); }
+  }
+  await creditDay(date, amount, dry);
 }
 
 // export the pure helpers for tests; only run the feed when executed directly (not on require)

@@ -319,6 +319,32 @@
   .recoveryday{font-family:var(--mono);font-size:11.5px;color:#9ad0ff;background:rgba(46,125,255,0.10);border:1px solid rgba(95,224,255,0.25);border-radius:10px;padding:9px 11px;margin-bottom:11px;line-height:1.45;}
   .recoveryday b{color:#cfeaff;}
 
+  /* 🫀 Sacral Response — the System presents a rep; your gut answers (Generator: respond, don't initiate) */
+  .sacral{background:radial-gradient(120% 90% at 50% -20%, rgba(63,224,160,0.09), transparent 65%), var(--panel);}
+  .sacralcue{font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--faint2);margin-bottom:9px;}
+  .sacralrep{font-size:16.5px;font-weight:600;line-height:1.3;color:var(--txt);min-height:24px;display:flex;align-items:center;gap:9px;}
+  .sacralrep .chip{width:11px;height:11px;border-radius:3px;flex:0 0 auto;}
+  .sacralrep .sx{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+  .sacralbtns{display:flex;gap:9px;margin-top:13px;}
+  .sacralyes,.sacralno{border-radius:13px;cursor:pointer;font-family:var(--mono);font-weight:700;font-size:16px;letter-spacing:0.02em;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:58px;padding:11px 8px;}
+  .sacralyes{flex:1;border:1px solid var(--financial);color:var(--financial);background:rgba(63,224,160,0.12);box-shadow:0 0 16px rgba(63,224,160,0.16), inset 0 0 16px rgba(63,224,160,0.05);}
+  .sacralyes:active{background:rgba(63,224,160,0.26);transform:scale(.98);}
+  .sacralno{flex:0 0 36%;border:1px solid var(--line);color:var(--muted);background:rgba(46,125,255,0.06);}
+  .sacralno:active{background:rgba(46,125,255,0.16);transform:scale(.98);}
+  .sacralyes .sl,.sacralno .sl{font-size:9px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;opacity:0.7;}
+
+  /* 🌙 Satisfaction check-in — the Generator's signature reading */
+  .satisbtns{display:flex;gap:7px;}
+  .satisbtn{flex:1;border:1px solid var(--line);border-radius:11px;background:rgba(46,125,255,0.06);color:var(--muted);cursor:pointer;padding:10px 4px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:62px;justify-content:center;transition:transform .12s;}
+  .satisbtn .se{font-size:21px;line-height:1;}
+  .satisbtn .stl{font-family:var(--mono);font-size:9px;letter-spacing:0.03em;text-transform:uppercase;}
+  .satisbtn:active{transform:scale(.95);}
+  .satisbtn.on{color:var(--txt);border-color:var(--cyan);background:rgba(95,224,255,0.12);box-shadow:0 0 12px rgba(95,224,255,0.16);}
+  .satisfoot{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:11px;line-height:1.5;}
+  .satisfoot .spark{display:inline-flex;gap:3px;align-items:flex-end;height:16px;margin-left:5px;vertical-align:-3px;}
+  .satisfoot .spark i{width:6px;border-radius:2px;background:var(--cyan-dim);display:inline-block;min-height:2px;}
+  .satisfoot .fwarn{color:#caa84a;}
+
   /* achievements */
   .achgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;}
   .ach{position:relative;border:1px solid rgba(95,224,255,0.14);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:11px 5px 14px;text-align:center;background:rgba(4,8,16,0.5);opacity:0.5;transition:opacity .2s, transform .12s;min-height:84px;cursor:pointer;}
@@ -378,6 +404,16 @@
 
   .footnote{text-align:center;font-family:var(--mono);font-size:10px;color:var(--faint2);margin-top:20px;letter-spacing:0.08em;}
   .reset{background:none;border:none;color:var(--faint2);font-family:var(--mono);font-size:10px;text-decoration:underline;cursor:pointer;}
+
+  /* ===== accessibility: visible keyboard-focus ring (WCAG 2.4.7) + Reduce Motion (Apple HIG) ===== */
+  :where(button,a,input,textarea,[role=button],[tabindex],.reprow,.ach,.dchip,.satisbtn,.sacralyes,.sacralno):focus-visible{
+    outline:2px solid var(--cyan); outline-offset:2px;
+  }
+  .note.show{pointer-events:auto;cursor:pointer;}   /* tappable to dismiss ONLY while visible; idle it inherits pointer-events:none from .notewrap so it never blocks taps */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
+    .hydrowave{ display:none; }
+  }
 </style>
 </head>
 <body>
@@ -395,6 +431,11 @@
     <button class="bsignin" id="bannerSignIn">☁ Sign in with Google</button>
   </div>
 
+  <div class="panel signin-banner" id="saveBanner" style="display:none">
+    <div class="bmsg">⚠ <b>Progress isn't saving on this device.</b> Storage may be full or blocked (private browsing?). Sign in to Google so it's safe in the cloud, or free up space and reload.</div>
+  </div>
+
+  <!-- ===== HERO: your culmination number ===== -->
   <div class="panel rating" id="ratingPanel">
     <div class="ph"><span class="t">⚡ Power Rating</span><span class="meta" id="ratingTier">—</span></div>
     <div class="ratingrow">
@@ -408,37 +449,28 @@
     <svg class="ratingspark" id="ratingSpark" viewBox="0 0 300 42" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 
-  <div class="panel hero">
-    <div class="ph"><span class="t">⚡ Power Level</span><span class="meta">capacity to earn</span></div>
-    <div class="big" id="incLvl">Lv 1</div>
-    <div class="sub" id="incSub">0 power · grows as your activities stack</div>
-    <div class="bar herobar"><i id="incBar" style="width:0%"></i></div>
-    <div class="growth" id="growthLine"></div>
+  <!-- ===== ACTION ZONE: the thing to respond to leads, so you act before you admire your scores ===== -->
+  <div class="panel penalty" id="penaltyPanel" style="display:none">
+    <div class="ph"><span class="t">⚠ Penalty Active</span></div>
+    <p id="penaltyText"></p>
   </div>
 
-  <div class="panel buff" id="buffPanel">
-    <div class="x" id="mult">×1.0</div>
-    <div style="flex:1">
-      <div class="cap" id="buffCap"></div>
-      <div class="dots" id="dots"></div>
+  <div class="panel" id="dailyPanel">
+    <div class="ph"><span class="t">Daily Quest</span><span class="meta" id="dailyMeta">0 / 6</span></div>
+    <div class="recoveryday" id="recoveryDay" style="display:none"></div>
+    <div id="dailyReqs"></div>
+    <div id="dailyFoot"></div>
+  </div>
+
+  <!-- Sacral Response: the System presents a rep; your gut answers (Generator strategy = respond, not initiate) -->
+  <div class="panel sacral" id="sacralPanel">
+    <div class="ph"><span class="t">🫀 Sacral Response</span><span class="meta" id="sacralMeta">respond — don't decide</span></div>
+    <div class="sacralcue" id="sacralCue">The System presents · your gut answers</div>
+    <div class="sacralrep" id="sacralRep">—</div>
+    <div class="sacralbtns">
+      <button class="sacralyes" id="sacralYes" aria-label="yes, log this rep">uh-huh<span class="sl">yes — log it</span></button>
+      <button class="sacralno" id="sacralNo" aria-label="no, show another">unh-uh<span class="sl">next</span></button>
     </div>
-  </div>
-
-  <div class="panel hydro" id="hydroPanel">
-    <div class="ph"><span class="t">💧 Hydration</span><span class="meta" id="hydroMeta">0 / 125 oz</span></div>
-    <div class="hydrowrap">
-      <div class="hydrofill" id="hydroFill"><div class="hydrowave"></div></div>
-      <div class="hydrotxt"><span id="hydroOz">0 oz</span><span class="pct" id="hydroPct">0%</span></div>
-    </div>
-    <div class="hydrobtns" id="hydroBtns"></div>
-    <div class="hydrofoot"><span class="left" id="hydroLeft"></span><span class="streak" id="hydroStreak"></span></div>
-    <div class="hydrocap" id="hydroCap"></div>
-  </div>
-
-  <div class="panel whoop" id="whoopPanel" style="display:none">
-    <div class="ph"><span class="t">⌚ WHOOP Vitals</span><span class="meta" id="whoopAsOf"></span></div>
-    <div class="vitals" id="whoopVitals"></div>
-    <div class="whoopcoach" id="whoopCoach"></div>
   </div>
 
   <div class="panel smart">
@@ -462,20 +494,49 @@
     </div>
   </div>
 
-  <div class="panel penalty" id="penaltyPanel" style="display:none">
-    <div class="ph"><span class="t">⚠ Penalty Active</span></div>
-    <p id="penaltyText"></p>
-  </div>
-
-  <div class="panel" id="dailyPanel">
-    <div class="ph"><span class="t">Daily Quest</span><span class="meta" id="dailyMeta">0 / 6</span></div>
-    <div class="recoveryday" id="recoveryDay" style="display:none"></div>
-    <div id="dailyReqs"></div>
-    <div id="dailyFoot"></div>
-  </div>
-
-  <button class="repbtn" id="getRep">▸ Get a rep in</button>
+  <button class="repbtn" id="getRep">▸ Browse all reps</button>
   <div class="suggest" id="suggest"></div>
+
+  <!-- Satisfaction check-in: a Generator's signature is the FEELING the day was correct, not just the XP -->
+  <div class="panel satis" id="satisPanel">
+    <div class="ph"><span class="t">🌙 How did today feel?</span><span class="meta" id="satisMeta">your signature</span></div>
+    <div class="satisbtns" id="satisBtns"></div>
+    <div class="satisfoot" id="satisFoot"></div>
+  </div>
+
+  <!-- ===== DASHBOARD: the reward shelf you scroll into after acting ===== -->
+  <div class="panel hydro" id="hydroPanel">
+    <div class="ph"><span class="t">💧 Hydration</span><span class="meta" id="hydroMeta">0 / 125 oz</span></div>
+    <div class="hydrowrap">
+      <div class="hydrofill" id="hydroFill"><div class="hydrowave"></div></div>
+      <div class="hydrotxt"><span id="hydroOz">0 oz</span><span class="pct" id="hydroPct">0%</span></div>
+    </div>
+    <div class="hydrobtns" id="hydroBtns"></div>
+    <div class="hydrofoot"><span class="left" id="hydroLeft"></span><span class="streak" id="hydroStreak"></span></div>
+    <div class="hydrocap" id="hydroCap"></div>
+  </div>
+
+  <div class="panel whoop" id="whoopPanel" style="display:none">
+    <div class="ph"><span class="t">⌚ WHOOP Vitals</span><span class="meta" id="whoopAsOf"></span></div>
+    <div class="vitals" id="whoopVitals"></div>
+    <div class="whoopcoach" id="whoopCoach"></div>
+  </div>
+
+  <div class="panel hero">
+    <div class="ph"><span class="t">⚡ Power Level</span><span class="meta">capacity to earn</span></div>
+    <div class="big" id="incLvl">Lv 1</div>
+    <div class="sub" id="incSub">0 power · grows as your activities stack</div>
+    <div class="bar herobar"><i id="incBar" style="width:0%"></i></div>
+    <div class="growth" id="growthLine"></div>
+  </div>
+
+  <div class="panel buff" id="buffPanel">
+    <div class="x" id="mult">×1.0</div>
+    <div style="flex:1">
+      <div class="cap" id="buffCap"></div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
 
   <div class="panel" id="bodyPanel">
     <div class="ph"><span class="t">⚡ What's Powering Up</span><span class="meta">today</span></div>
@@ -528,7 +589,7 @@
 
   <div class="footnote">
     THE SYSTEM · THERE IS ALWAYS A REP SOMEWHERE<br>
-    <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in with Google to sync</button> · <button class="reset" id="resetBtn">reset save</button>
+    <button class="reset" id="syncBtn" style="color:var(--cyan)">☁ sign in with Google to sync</button> · <button class="reset" id="resetBtn">reset save</button> · <button class="reset" id="undoResetBtn" style="color:var(--gold);display:none">↩ undo reset</button>
   </div>
 
   <div class="scrim" id="scrim"></div>
@@ -579,14 +640,40 @@
   var st, queue = [], showing = false, audioCtx = null;
   var FB = window.__FB || null;
   var fbDoc = null, fbDocUnsub = null, fbWriteTimer = null, fbApplyingRemote = false, cloudReady = false, authResolved = false;
+  var curUser = null, serverSynced = false, cloudWriteError = false, localSaveFailed = false;
 
   function now(){ return new Date(); }
   function today(){ return G.dayIndex(now()); }
-  function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){ if(!window.__saveWarned){ window.__saveWarned=true; try{ alert("Progress couldn't be saved — device storage may be full or blocked."); }catch(_){} } } }
+  function persistLocal(){
+    try{
+      localStorage.setItem(KEY, JSON.stringify(st));
+      if(localSaveFailed){ localSaveFailed = false; refreshSaveBanner(); }   // recovered
+    }catch(e){
+      localSaveFailed = true; refreshSaveBanner();   // PERSISTENT banner (not a one-shot alert): progress isn't saving on this device
+    }
+  }
+  // Transactional read-merge-write: re-read the server doc and CRDT-merge before writing, so a debounced flush
+  // can never clobber a concurrent write it never saw (another device, or the Node WHOOP/Amazon feed). mergeStates
+  // is idempotent + monotonic, so wrapping the write in get+merge can only strengthen guarantees, never lose data.
   function cloudPush(){
     if(!FB || !fbDoc || fbApplyingRemote || !cloudReady) return;  // never overwrite the cloud until we've reconciled with the SERVER copy
     clearTimeout(fbWriteTimer);
-    fbWriteTimer = setTimeout(function(){ try{ fbDoc.set(st); }catch(e){} }, 600);
+    fbWriteTimer = setTimeout(function(){
+      var snapshot = st;   // the local state at flush time
+      FB.db.runTransaction(function(tx){
+        return tx.get(fbDoc).then(function(doc){
+          tx.set(fbDoc, (doc && doc.exists) ? G.mergeStates(snapshot, doc.data(), now()) : snapshot);
+        });
+      }).then(function(){ flagCloudError(false); })
+        .catch(function(e){ flagCloudError(e); });   // offline/transient: local copy still holds it; next flush/snapshot converges
+    }, 600);
+  }
+  // surface a PERSISTENT "cloud save failing" state — but stay quiet when simply offline (local save covers that,
+  // and an expected offline state shouldn't look like data loss). Cleared on the next successful transaction.
+  function flagCloudError(e){
+    var online = (typeof navigator === "undefined") || navigator.onLine !== false;
+    var failing = !!e && online;
+    if(failing !== cloudWriteError){ cloudWriteError = failing; refreshSyncStatus(); }
   }
   function save(){ persistLocal(); cloudPush(); }
   function $(id){ return document.getElementById(id); }
@@ -596,6 +683,7 @@
     if(!raw){ st = G.newState("Lawrence Whitaker", now()); persistLocal(); render(); }
     else { var r = G.init(raw, now()); st = r.state; persistLocal(); render(); enqueue(r.events); }
     setupCloud();
+    refreshUndoReset();   // show the "undo reset" link if a <24h pre-reset backup exists
   }
 
   // ---- cloud sync (Firebase: one live state across phone + Mac) ----
@@ -610,7 +698,7 @@
       authResolved = true;
       updateAuthUI(user);
       if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub = null; }
-      cloudReady = false;                                   // must reconcile with the SERVER copy before any push (prevents reset-on-sign-in)
+      cloudReady = false; serverSynced = false; cloudWriteError = false;  // must reconcile with the SERVER copy before any push (prevents reset-on-sign-in)
       if(!user){ fbDoc = null; return; }
       fbDoc = FB.db.collection("users").doc(user.uid);
       // includeMetadataChanges: we need the fromCache->server transition so we know when it's safe to write back
@@ -621,7 +709,7 @@
           // data on any fresh device/browser. Only seed when the SERVER confirms the doc is truly absent.
           if(snap.metadata.fromCache) return;
           try{ fbDoc.set(st); }catch(e){}                   // genuine first-ever sign-in -> seed from local
-          cloudReady = true;
+          cloudReady = true; serverSynced = true; refreshSyncStatus();
           return;
         }
         // doc exists -> MERGE, never replace: union local + cloud so neither device's progress is lost
@@ -629,16 +717,20 @@
         var prevSt = JSON.stringify(st);
         var rr = G.init(JSON.stringify(G.mergeStates(st, snap.data(), now())), now());
         fbApplyingRemote = true;
-        st = rr.state; persistLocal(); render();
-        fbApplyingRemote = false;
-        replayPendingWhoop();   // re-credit any WHOOP synced before cloud was ready (idempotent; merge already preserves most)
+        try {
+          st = rr.state; persistLocal(); render();
+          replayPendingWhoop();   // re-credit WHOOP synced before cloud was ready — still under the remote-apply guard so it can't push mid-merge
+        } finally {
+          fbApplyingRemote = false;   // ALWAYS reset, even if render/replay throws — otherwise the guard sticks and cloud sync silently dies for the session
+        }
         enqueue(rr.events);
-        if(!snap.metadata.fromCache) cloudReady = true;     // reconciled with the server -> writes are now safe
+        if(!snap.metadata.fromCache){ cloudReady = true; if(!serverSynced){ serverSynced = true; refreshSyncStatus(); } }   // reconciled with the server -> writes safe
         if(cloudReady && JSON.stringify(st) !== prevSt) cloudPush();  // converge: push the merged result
       }, function(){});
     });
   }
   function updateAuthUI(user){
+    curUser = (user && user.uid) ? user : null;
     // signed-out banner: only once auth has definitively resolved to "no user" (never flash mid-check or when offline-only)
     var banner = $("signinBanner");
     if(banner){
@@ -649,13 +741,21 @@
     var b = $("syncBtn"); if(!b) return;
     if(user === false){ b.textContent = "offline (no sync)"; b.onclick = null; return; }
     if(user){
-      b.textContent = "☁ synced · " + (user.displayName || user.email || "signed in");
-      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")){ cloudReady=false; clearTimeout(fbWriteTimer); if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub=null; } fbDoc=null; FB.auth.signOut(); } };  // tear down synchronously so no queued push fires mid-signout
+      refreshSyncStatus();   // "syncing…" until the first server snapshot, then "synced" (or a write-failing flag)
+      b.onclick = function(){ if(confirm("Sign out of cloud sync on this device?")){ cloudReady=false; serverSynced=false; clearTimeout(fbWriteTimer); if(fbDocUnsub){ fbDocUnsub(); fbDocUnsub=null; } fbDoc=null; FB.auth.signOut(); } };  // tear down synchronously so no queued push fires mid-signout
     } else {
       b.textContent = "☁ sign in with Google to sync";
       b.onclick = startGoogleSignIn;
     }
   }
+  // honest sync state: don't claim "synced" until the SERVER copy has actually been seen this session
+  function refreshSyncStatus(){
+    var b = $("syncBtn"); if(!b || !curUser) return;
+    if(cloudWriteError) b.textContent = "⚠ cloud save retrying — saved on device";
+    else if(!serverSynced) b.textContent = "☁ syncing… · saved on device";
+    else b.textContent = "☁ synced · " + (curUser.displayName || curUser.email || "signed in");
+  }
+  function refreshSaveBanner(){ var b = $("saveBanner"); if(b) b.style.display = localSaveFailed ? "" : "none"; }
 
   // ---- Google sign-in — STANDARD Firebase, same-domain (app is served from the Firebase Hosting
   //      domain, so app origin == authDomain). No partitioning, no GIS/email-link workarounds.
@@ -685,6 +785,14 @@
     HYDRATION_GOAL: function(e){ return { t:"[ HYDRATION COMPLETE ]", lines:[e.goalOz+"oz down — your body is fueled.","A Physical rep is logged. Streak kept alive."], gold:true }; },
   };
   function enqueue(events){ (events||[]).forEach(function(e){ if(NOTE[e.type]) queue.push(NOTE[e.type](e)); }); pump(); }
+  var noteTimer = null, dismissing = false;
+  function dismissNote(){
+    if(!showing || dismissing) return;   // re-entrant-safe: a 2nd tap mid-fade must not schedule a 2nd callback that strands the next toast
+    dismissing = true;
+    clearTimeout(noteTimer);
+    $("note").classList.remove("show");
+    setTimeout(function(){ showing=false; dismissing=false; pump(); }, 320);
+  }
   function pump(){
     if(showing || !queue.length) return;
     showing = true;
@@ -695,7 +803,8 @@
     $("noteBody").innerHTML = n.lines.map(function(l){ return '<div class="nl">'+esc(l)+'</div>'; }).join("");
     if(!n.danger) ding(n.gold);
     requestAnimationFrame(function(){ el.classList.add("show"); });
-    setTimeout(function(){ el.classList.remove("show"); setTimeout(function(){ showing=false; pump(); }, 320); }, 1900);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(dismissNote, (n.lines && n.lines.length > 1) ? 2500 : 1900);  // multi-line cards linger a touch longer; tap to dismiss sooner
   }
   function ding(high){
     try{
@@ -761,9 +870,12 @@
     });
     $("dailyReqs").innerHTML = rq;
     $("dailyMeta").textContent = dp.done + " / " + dp.total;
+    var firstDay = (st.totalXp === 0 && (!st.log || !st.log.length));   // soften day-one: an invitation, not a threat
     $("dailyFoot").innerHTML = dp.met
       ? '<div class="done-line">✓ Daily Quest complete. The System is pleased.</div>'
-      : '<div class="warn">⚠ Failure to complete the Daily Quest will result in a penalty.</div>';
+      : (firstDay
+          ? '<div class="warn" style="color:var(--cyan)">Welcome, ' + esc((st.player.name || "Player").split(" ")[0]) + '. Log one rep in each of the six areas to clear today\'s quest.</div>'
+          : '<div class="warn">⚠ Failure to complete the Daily Quest will result in a penalty.</div>');
 
     // stats
     var sh = "";
@@ -813,10 +925,11 @@
     });
     $("logList").innerHTML = lh;
 
-    // suggestion
-    var low = G.suggestionDim(st, td);
-    var cand = G.repsForDim(low).filter(function(r){return !r.big;}).sort(function(a,b){return a.xp-b.xp;})[0];
-    $("suggest").innerHTML = cand ? ('Lagging: <b style="color:'+DIM[low].hex+'">'+DIM[low].label+'</b> — try "<b>'+cand.name+'</b>"') : "";
+    // suggestion line under "browse all" — always a positive nudge (the Sacral card is the primary "respond" surface)
+    var dpz = G.dailyProgress(st, td);
+    $("suggest").innerHTML = dpz.met
+      ? '✓ All six dimensions today. <b>The System is pleased.</b>'
+      : 'Tap <b>uh-huh</b> above to respond, or browse all reps — there\'s always a rep somewhere.';
 
     renderWhoop();
     renderHydration();
@@ -827,6 +940,8 @@
     renderSpark();
     renderAchievements();
     renderRecovery();
+    renderSacral();
+    renderSatisfaction();
   }
 
   // ---- rating trend sparkline ----
@@ -895,6 +1010,66 @@
       el.style.display = "";
       el.innerHTML = '🌙 <b>Recovery day'+(rec!=null?(' — '+rec+'%'):'')+'.</b> Your body is in the red, so the Physical rep is <b>waived</b> today — rest counts. Clear the other five and you\'re good.';
     } else el.style.display = "none";
+  }
+
+  // ---- 🫀 Sacral Response: the System presents one rep; your gut answers (Generator strategy = respond) ----
+  var sacralPassed = {};   // rep ids you said "unh-uh" to this session, so the next prompt is fresh
+  function currentSacral(){
+    var q = G.sacralQueue(st, now());
+    if(!q.length) return null;
+    var fresh = q.filter(function(r){ return !sacralPassed[r.id]; });
+    if(!fresh.length){ sacralPassed = {}; fresh = q; }   // cycled through everything -> start over
+    return fresh[0];
+  }
+  function renderSacral(){
+    var el = $("sacralRep"); if(!el) return;
+    var rep = currentSacral();
+    if(!rep){ el.textContent = "—"; el.removeAttribute("data-rep"); return; }
+    el.setAttribute("data-rep", rep.id);
+    var hex = (DIM[rep.dim]||{}).hex || "#5fe0ff", lbl = (DIM[rep.dim]||{}).label || rep.dim;
+    var shown = rep.dim==="financial" ? Math.round(rep.xp * G.multiplier(st, today()) * (G.isPenalized(st)?1:(1+G.totalBonusPct(st)/100))) : rep.xp;
+    el.innerHTML = '<span class="chip" style="background:'+hex+'"></span><span>'+esc(rep.name)+'</span><span class="sx">+'+shown+' '+esc(lbl)+'</span>';
+    var zone = (st.whoop && st.whoop.zone) || null, cue = "The System presents · your gut answers";
+    if(zone==="green") cue = "🟢 Primed — the System offers something worth your energy";
+    else if(zone==="red") cue = "🔴 Recover — the System offers something gentle";
+    else if(zone==="yellow") cue = "🟡 Steady — respond to what's present";
+    var cueEl = $("sacralCue"); if(cueEl) cueEl.textContent = cue;
+  }
+  function sacralDing(clip){
+    try{
+      audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+      if(audioCtx.state==="suspended") audioCtx.resume();
+      var o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type="sine"; o.frequency.value = clip?300:520;   // lower, gut-level tone (distinct from the bright level-up ding)
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(clip?0.03:0.055, audioCtx.currentTime+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+(clip?0.15:0.34));
+      o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+(clip?0.17:0.36));
+    }catch(e){}
+  }
+
+  // ---- 🌙 Satisfaction check-in: the Generator's signature reading (subjective, never penalizes) ----
+  var SATIS = [ {lv:1,e:"😩",t:"Drained"}, {lv:2,e:"😐",t:"Flat"}, {lv:3,e:"🙂",t:"Good"}, {lv:4,e:"😄",t:"Satisfied"} ];
+  function renderSatisfaction(){
+    var box = $("satisBtns"); if(!box) return;
+    var cur = G.satisfactionToday(st, now());
+    box.innerHTML = SATIS.map(function(s){
+      return '<button class="satisbtn'+(cur===s.lv?' on':'')+'" data-sat="'+s.lv+'" aria-label="'+s.t+'"><span class="se">'+s.e+'</span><span class="stl">'+s.t+'</span></button>';
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-sat]"), function(b){
+      b.onclick = function(){ apply(function(){ return G.setSatisfaction(st, +b.getAttribute("data-sat"), now()); }); };
+    });
+    var tr = G.satisfactionTrend(st, 7, now());
+    var spark = '<span class="spark">'+tr.map(function(p){
+      var h = p.level==null ? 2 : (3 + p.level*3), col = p.level==null ? 'var(--faint)' : (p.level<=2 ? '#caa84a' : 'var(--cyan-dim)');
+      return '<i style="height:'+h+'px;background:'+col+'"></i>';
+    }).join("")+'</span>';
+    var foot;
+    if(cur==null) foot = 'A quick gut-read — how did today actually <i>feel</i>? (not your XP)';
+    else { var lab = (SATIS.filter(function(s){return s.lv===cur;})[0]||{}).t || ""; foot = 'Logged: <b style="color:var(--txt)">'+esc(lab)+'</b>.'; }
+    foot += ' <span style="color:var(--faint2)">7d</span>'+spark;
+    if(G.frustrationSignal(st, now()).warn) foot += '<div class="fwarn" style="margin-top:7px">A few flat days in a row — that\'s data, not failure. What would feel satisfying to respond to next?</div>';
+    $("satisFoot").innerHTML = foot;
   }
 
   // ---- ⚡ Power Rating — the culmination number ----
@@ -1058,7 +1233,7 @@
   function closeSheet(){ $("scrim").classList.remove("show"); $("sheet").classList.remove("show"); }
 
   // ---- smart activity input ----
-  var selDim = null, selXp = 0, lastText = null;
+  var selDim = null, selXp = 0, lastText = null, dimUserPicked = false;
   function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
   function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function previewActivity(){
@@ -1066,7 +1241,7 @@
     var cls = text.trim() ? G.classifyActivity(text) : null;
     var box = $("actPreview");
     if(!cls){ box.style.display="none"; selDim=null; lastText=null; return; }
-    if(lastText !== text){ selDim = cls.dim; lastText = text; }
+    if(lastText !== text){ selDim = cls.dim; dimUserPicked = false; lastText = text; }
     selXp = (selDim === cls.dim) ? cls.xp : (cls.big ? 15 : cls.xp);
     var chips = G.DIMENSIONS.map(function(d){
       return '<button class="dchip'+(d===selDim?" on":"")+'" data-d="'+d+'" style="--c:'+DIM[d].hex+'">'+DIM[d].label+'</button>';
@@ -1077,7 +1252,7 @@
       + '<div class="dchips">'+chips+'</div>'
       + '<button class="logitbtn" id="logIt">▸ Log it</button>';
     Array.prototype.forEach.call(box.querySelectorAll("[data-d]"), function(b){
-      b.onclick = function(){ selDim = b.getAttribute("data-d"); previewActivity(); };
+      b.onclick = function(){ selDim = b.getAttribute("data-d"); dimUserPicked = true; previewActivity(); };
     });
     $("logIt").onclick = logActivity;
   }
@@ -1085,6 +1260,15 @@
     var text = $("actInput").value.trim();
     if(!text) return;
     var cls = G.classifyActivity(text);
+    // don't silently bank a low-confidence guess: make the user confirm the area first (the confident fast path still commits instantly)
+    var lowConf = cls && (cls.confidence < 0.4 || cls.categoryId === "general");
+    if(lowConf && !dimUserPicked){
+      previewActivity();
+      var pbox = $("actPreview"); if(pbox) pbox.style.display = "";
+      var pv = pbox && pbox.querySelector(".pvline");
+      if(pv && !pv.querySelector(".pvconfirm")) pv.insertAdjacentHTML("beforeend", '<span class="pvlow pvconfirm"> — tap the right area, then Log it</span>');
+      return;
+    }
     var dim = selDim || (cls ? cls.dim : "mental");
     var xp = selXp || (cls ? cls.xp : 10);
     var r = G.logActivity(st, text, now(), { dim:dim, xp:xp });
@@ -1179,7 +1363,42 @@
 
   $("getRep").onclick = openSheet;
   $("scrim").onclick = closeSheet;
-  $("resetBtn").onclick = function(){ if(confirm("Reset the System? This wipes all progress.")){ var fresh = G.newState("Lawrence Whitaker", now()); fresh.epoch = (st && st.epoch ? st.epoch : 0) + 1; st = fresh; save(); render(); } };  // bump epoch so the reset wins the cloud merge (doesn't get undone)
+
+  // Sacral Response: uh-huh logs the presented rep; unh-uh passes to the next candidate
+  $("sacralYes").onclick = function(){
+    var id = $("sacralRep").getAttribute("data-rep"); if(!id) return;
+    sacralDing(false);
+    apply(function(){ return G.applyRep(st, id, now()); });   // logs it; apply() re-renders -> a fresh rep is presented
+  };
+  $("sacralNo").onclick = function(){
+    var id = $("sacralRep").getAttribute("data-rep"); if(id) sacralPassed[id] = 1;
+    sacralDing(true);
+    renderSacral();   // present the next candidate; no state change
+  };
+
+  // ---- reset (highest-blast-radius write) — type-to-confirm + a pre-reset backup with a 24h UNDO ----
+  var BACKUP_KEY = KEY + ".backup";
+  function readBackup(){ try{ var b = JSON.parse(localStorage.getItem(BACKUP_KEY) || "null"); return (b && b.ts && b.state && (Date.now() - b.ts) < 86400000) ? b : null; }catch(e){ return null; } }
+  function refreshUndoReset(){ var btn = $("undoResetBtn"); if(btn) btn.style.display = readBackup() ? "" : "none"; }
+  $("resetBtn").onclick = function(){
+    var typed = prompt("This wipes ALL progress — on every signed-in device.\n\nType RESET to confirm (you'll have 24h to undo):");
+    if(!typed || typed.trim().toUpperCase() !== "RESET") return;
+    // safety net before we wipe — but NEVER overwrite an existing valid (<24h) backup, or a second reset would
+    // replace the real-progress backup with the already-empty post-reset state and the undo would restore nothing.
+    if(!readBackup()){ try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({ ts: Date.now(), state: st })); }catch(e){} }
+    var fresh = G.newState("Lawrence Whitaker", now());
+    fresh.epoch = (st && st.epoch ? st.epoch : 0) + 1;   // higher epoch wins the cloud merge so the reset actually propagates
+    st = fresh; save(); render(); refreshUndoReset();
+  };
+  $("undoResetBtn").onclick = function(){
+    var b = readBackup(); if(!b){ refreshUndoReset(); return; }
+    if(!confirm("Restore the progress backup taken just before your last reset?")) return;
+    var restored = b.state; restored.epoch = (st && st.epoch ? st.epoch : 0) + 1;   // out-rank the reset so the restore wins the merge
+    st = G.init(JSON.stringify(restored), now()).state;
+    try{ localStorage.removeItem(BACKUP_KEY); }catch(e){}
+    save(); render(); refreshUndoReset();
+    queue.push({ t:"[ RESTORED ]", lines:["Your progress is back. The System remembers."], gold:true }); pump();
+  };
 
   // ---- ⤴ shareable System card (canvas -> Web Share / download) ----
   var DIMH = { physical:"#ff8a4c", mental:"#a78bfa", spiritual:"#ffd76a", family:"#ff6fae", social:"#56c2ff", financial:"#3fe0a0" };
@@ -1241,6 +1460,11 @@
   }
   document.addEventListener("visibilitychange", function(){ if(!document.hidden) reconcileNow(); });
   window.addEventListener("focus", reconcileNow);
+  // a cloud write that failed (transient/offline) actually retries when connectivity returns — the idempotent
+  // transaction clears cloudWriteError on success, so the "retrying" status is honest instead of stuck.
+  window.addEventListener("online", function(){ if(cloudWriteError) cloudPush(); });
+
+  $("note").addEventListener("click", dismissNote);   // tap a notification to dismiss it (don't wait out the timer)
 
   boot();
   bootWhoopSync();

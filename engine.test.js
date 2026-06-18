@@ -1100,6 +1100,125 @@ test("recentSalesTotal is durable — survives the sale aging out of the capped 
   eq(E.recentSalesTotal(E.mergeStates(fresh(D(0)), s, D(0)), 7, D(0)), 500, "order-independent");
 });
 
+// ---------------------------------------------------------------- overnight foundation fixes
+test("daily +50 reward survives a split-across-devices completion, credited exactly once", function () {
+  var base = E.newState("L", D(0));
+  var x = base; ["phys_pushups", "ment_deep", "spir_meditate"].forEach(function (id) { x = E.applyRep(x, id, D(0)).state; }); // 3 dims
+  var y = base; ["fam_call", "soc_friend", "fin_dms"].forEach(function (id) { y = E.applyRep(y, id, D(0)).state; });          // other 3 dims
+  assert(!x.daily.completed && !y.daily.completed, "neither device completed the day alone");
+  var m = E.mergeStates(x, y, D(0));
+  assert(E.isDailyMet(m, m.daily.day), "merged history is daily-met");
+  assert(m.daily.completed, "merged day marked completed");
+  eq(m.totalXp, x.totalXp + y.totalXp + E.CONFIG.dailyQuest.reward, "merged totalXp includes the +50 exactly once");
+  eq(E.mergeStates(m, m, D(0)).totalXp, m.totalXp, "re-merge does not double the reward");
+  eq(E.mergeStates(m, y, D(0)).totalXp, m.totalXp, "re-merging an absorbed device is a no-op on the reward");
+});
+
+test("daily reward NOT double-credited when one device already completed it (rewardedDay marker + legacy backfill)", function () {
+  var base = E.newState("L", D(0));
+  var full = base; ["phys_pushups", "ment_deep", "spir_meditate", "fam_call", "soc_friend", "fin_dms"].forEach(function (id) { full = E.applyRep(full, id, D(0)).state; });
+  assert(full.daily.completed && full.daily.rewardedDay === full.daily.day, "device completed solo and marked rewarded");
+  var solo = full.totalXp;
+  eq(E.mergeStates(full, base, D(0)).totalXp, solo, "merge with an empty same-day device doesn't add a second +50");
+  var legacy = JSON.parse(JSON.stringify(full)); delete legacy.daily.rewardedDay;     // pre-fix save: completed but no marker
+  eq(E.validateRepair(legacy, D(0)).daily.rewardedDay, full.daily.day, "legacy completed day is backfilled as rewarded");
+  eq(E.mergeStates(legacy, base, D(0)).totalXp, solo, "legacy completed day not double-credited on the first post-fix merge");
+});
+
+test("a rewardedDay<->day desync on a completed day is re-synced; merge stays idempotent (no phantom +50)", function () {
+  var full = E.newState("L", D(0));
+  ["phys_pushups", "ment_deep", "spir_meditate", "fam_call", "soc_friend", "fin_dms"].forEach(function (id) { full = E.applyRep(full, id, D(0)).state; });
+  assert(full.daily.completed, "completed solo");
+  var solo = full.totalXp;
+  // simulate a torn write / corrupt cloud doc: rewardedDay desynced from daily.day while the +50 is already banked
+  var corrupt = JSON.parse(JSON.stringify(full)); corrupt.daily.rewardedDay = full.daily.day - 2;
+  eq(E.validateRepair(corrupt, D(0)).daily.rewardedDay, full.daily.day, "validateRepair re-syncs rewardedDay to daily.day for a completed day");
+  eq(E.mergeStates(corrupt, corrupt, D(0)).totalXp, solo, "self-merge of a desynced completed save does NOT re-credit the +50");
+});
+
+test("penalty does not stay stuck active after the day becomes met via merge", function () {
+  var x = E.newState("L", D(0)); x.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
+  var y = E.newState("L", D(0)); y.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
+  ["phys_pushups", "ment_deep", "spir_meditate"].forEach(function (id) { x = E.applyRep(x, id, D(0)).state; });
+  ["fam_call", "soc_friend", "fin_dms"].forEach(function (id) { y = E.applyRep(y, id, D(0)).state; });
+  assert(E.isPenalized(x) && E.isPenalized(y), "both devices still penalized pre-merge (neither completed alone)");
+  var m = E.mergeStates(x, y, D(0));
+  assert(E.isDailyMet(m, m.daily.day), "merged day is met");
+  assert(!E.isPenalized(m), "penalty cleared once the merged day is fully met (no-shame, path-independent)");
+});
+
+test("reconcile clears a penalty on a day that history already shows met", function () {
+  var s = E.newState("L", D(0)); s.player.createdDay = E.dayIndex(D(0)) - 1;
+  s.penalty = { active: true, sinceDay: E.dayIndex(D(0)) };
+  var day = String(E.dayIndex(D(0)));
+  s.history[day] = { physical: 1, mental: 1, spiritual: 1, family: 1, social: 1, financial: 1 };
+  var r = E.reconcileTo(s, E.dayIndex(D(0)));
+  assert(!E.isPenalized(r), "a fully-met day cannot remain under an active penalty");
+  assert(r.daily.completed, "and the day reads completed");
+});
+
+test("v1->v2 migration drops the legacy ledger (no amplified-xp re-inflation on later merge)", function () {
+  var v1 = { version: 1, name: "L", created: ymd(0), incomeXp: 32,
+    dims: { physical: 0, mental: 0, spiritual: 0, family: 0, social: 0, financial: 20 },
+    history: {}, log: [{ ts: BASE.getTime(), dim: "financial", name: "closed", xp: 32, mult: 1.6 }] };
+  var migrated = E.migrateV1toV2(v1, D(0));
+  eq(migrated.log.length, 0, "legacy log dropped");
+  eq(migrated.dims.financial, 20, "dims preserved from v1 aggregate (not the amplified 32)");
+  var merged = E.mergeStates(migrated, E.newState("L", D(0)), D(0));
+  eq(merged.dims.financial, 20, "merge does not re-inflate financial xp from a migrated amplified ledger");
+  eq(merged.totalXp, migrated.totalXp, "totalXp stable across merge (no inflation)");
+});
+
+test("a garbage-huge epoch is rejected (can't wipe a healthy device); a real reset still wins", function () {
+  var healthy = E.applyRep(E.applyRep(E.newState("L", D(0)), "phys_pushups", D(0)).state, "fin_close", D(0)).state;
+  var corrupt = E.newState("L", D(0)); corrupt.epoch = 999999999;     // absurd — reset only ever bumps by 1
+  var m = E.mergeStates(healthy, corrupt, D(0));
+  assert(m.totalXp >= healthy.totalXp, "healthy progress preserved (corrupt epoch did not win)");
+  assert(m.epoch <= 1, "epoch pinned to the sane lower value");
+  var reset = E.newState("L", D(0)); reset.epoch = (healthy.epoch || 0) + 1;
+  eq(E.mergeStates(healthy, reset, D(0)).totalXp, 0, "a legitimate reset (epoch+1) still wins wholesale");
+});
+
+test("classifier big-win is gated by action+object — benign phrases are not +300 wins", function () {
+  ["signed up for a class", "landed at the airport", "booked a dentist appointment", "closed the browser tab", "sold my old couch on facebook"].forEach(function (txt) {
+    var c = E.classifyActivity(txt);
+    assert(!(c && c.big), "should NOT be a big win: \"" + txt + "\" (got " + (c && c.category) + ")");
+  });
+  ["booked a national commercial", "closed a wholesale account", "signed a new client", "landed a brand deal", "got the role", "new account today", "made a sale"].forEach(function (txt) {
+    var c = E.classifyActivity(txt);
+    assert(c && c.big && c.dim === "financial", "SHOULD be a big win: \"" + txt + "\" (got " + (c && c.category) + ")");
+  });
+});
+
+test("satisfaction: set/today/trend, merge union (max), frustration signal — never gates", function () {
+  var s = fresh(D(0));
+  eq(E.satisfactionToday(s, D(0)), null, "unrated by default");
+  var r = E.setSatisfaction(s, 4, D(0)); assert(r.ok, "valid level accepted"); s = r.state;
+  eq(E.satisfactionToday(s, D(0)), 4, "today's level stored");
+  assert(!E.setSatisfaction(s, 9, D(0)).ok, "out-of-range rejected");
+  var tr = E.satisfactionTrend(s, 7, D(0)); eq(tr.length, 7, "7-day trend length"); eq(tr[6].level, 4, "today is the last point");
+  var a = E.setSatisfaction(fresh(D(0)), 2, D(0)).state, b = E.setSatisfaction(fresh(D(0)), 4, D(0)).state;
+  eq(E.satisfactionToday(E.mergeStates(a, b, D(0)), D(0)), 4, "same-day conflict takes the max");
+  eq(E.satisfactionToday(E.mergeStates(b, a, D(0)), D(0)), 4, "order-independent");
+  var low = fresh(D(0));
+  low = E.setSatisfaction(low, 1, D(0)).state; low = E.setSatisfaction(low, 2, D(1)).state; low = E.setSatisfaction(low, 2, D(2)).state;
+  assert(E.frustrationSignal(low, D(2)).warn, "three low rated days -> soft frustration warning");
+  assert(!E.frustrationSignal(fresh(D(0)), D(0)).warn, "no warning without enough rated days");
+});
+
+test("sacralQueue: ordered candidate reps, excludes big wins, energy-aware", function () {
+  var s = fresh(D(0));
+  var q = E.sacralQueue(s, D(0));
+  assert(Array.isArray(q) && q.length > 0, "returns a non-empty queue");
+  assert(q.every(function (r) { return E.REPS.filter(function (x) { return x.id === r.id; })[0]; }), "all entries are real reps");
+  var bigIds = E.REPS.filter(function (x) { return x.big; }).map(function (x) { return x.id; });
+  assert(q.every(function (r) { return bigIds.indexOf(r.id) === -1; }), "big-win reps excluded from the sacral queue");
+  // red day -> a restorative rep leads
+  var red = fresh(D(0)); red.whoop = { date: ymd(0), recovery: 20, zone: "red" };
+  var qr = E.sacralQueue(red, D(0));
+  assert(["phys_sleep", "phys_mobility", "spir_rest", "spir_meditate", "spir_nature", "fam_time", "soc_friend"].indexOf(qr[0].id) !== -1, "red recovery floats a restorative rep to the front (got " + qr[0].id + ")");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");
