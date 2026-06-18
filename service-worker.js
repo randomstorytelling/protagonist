@@ -1,7 +1,7 @@
 /* Protagonist service worker.
  * Network-first with cache fallback: you always get the latest build when online, and the app
  * still works offline from the last-seen copy. (Cache-first was serving stale index.html/engine.js.) */
-var CACHE = "protagonist-v2";
+var CACHE = "protagonist-v3";
 var ASSETS = ["./", "./index.html", "./engine.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
@@ -22,7 +22,10 @@ self.addEventListener("activate", function (e) {
 
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
-  var sameOrigin = new URL(e.request.url).origin === self.location.origin;
+  var url = new URL(e.request.url);
+  var sameOrigin = url.origin === self.location.origin;
+  // never serve the SW script from cache — the browser must always see the freshest copy to detect updates
+  if (sameOrigin && url.pathname.indexOf("service-worker.js") !== -1) return;
   e.respondWith(
     fetch(e.request)
       .then(function (resp) {

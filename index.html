@@ -1248,8 +1248,17 @@
 </script>
 <script>
   if ("serviceWorker" in navigator) {
+    // when a freshly-installed SW takes control, reload ONCE so you instantly get the new build
+    // (guarded so it can never loop). This is why an old cached version no longer sticks on the phone.
+    var swReloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (swReloading) return; swReloading = true; location.reload();
+    });
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("service-worker.js").catch(function () {});
+      navigator.serviceWorker.register("service-worker.js").then(function (reg) {
+        reg.update(); // check for a newer SW every launch
+        setInterval(function () { reg.update(); }, 60 * 60 * 1000); // ...and hourly while open
+      }).catch(function () {});
     });
   }
 </script>
