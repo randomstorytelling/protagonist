@@ -69,6 +69,14 @@
     box-shadow:0 0 12px rgba(46,125,255,0.20), inset 0 0 10px rgba(95,224,255,0.06);text-shadow:0 0 8px var(--cyan-glow);}
   .rankbadge .lv{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.1em;margin-top:6px;}
 
+  /* header level-up progress bar — your cumulative Player Level always climbs */
+  .lvlprog{margin:-6px 0 16px;}
+  .lvlbar{height:6px;}
+  .lvlbar > i{background:linear-gradient(90deg,var(--blue),var(--cyan),var(--gold));transition:width .6s cubic-bezier(.2,.8,.2,1);}
+  .lvltxt{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.06em;margin-top:5px;text-align:right;}
+  .lvltxt b{color:var(--gold);}
+  .lvltxt.close b{color:var(--cyan);}
+
   .ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
   .ph .t{font-family:var(--mono);font-size:12px;letter-spacing:0.12em;color:var(--cyan);text-transform:uppercase;}
   .ph .meta{font-family:var(--mono);font-size:11px;color:var(--muted);}
@@ -424,6 +432,12 @@
       <div class="ttl" id="ptitle">— the Player</div>
     </div>
     <div class="rankbadge"><div class="r" id="rank">E</div><div class="lv" id="plvl">LV 1</div></div>
+  </div>
+
+  <!-- always-visible level-up progress: every rep nudges this bar toward the next Level (dopamine: you're always climbing) -->
+  <div class="lvlprog" id="lvlProg">
+    <div class="bar lvlbar"><i id="lvlBar" style="width:0%"></i></div>
+    <div class="lvltxt" id="lvlTxt"></div>
   </div>
 
   <div class="panel signin-banner" id="signinBanner" style="display:none">
@@ -828,6 +842,10 @@
     $("ptitle").textContent = st.activeTitle ? ("— "+titleName(st.activeTitle)) : "— the Player";
     $("rank").textContent = G.rank(st);
     $("plvl").textContent = "LV " + G.playerLevel(st);
+    var pl = G.levelFromXp(st.totalXp), toNext = Math.max(0, pl.need - pl.intoLevel), close = pl.pct >= 80;
+    $("lvlBar").style.width = pl.pct + "%";
+    $("lvlTxt").className = "lvltxt" + (close ? " close" : "");
+    $("lvlTxt").innerHTML = '<b>' + toNext.toLocaleString() + '</b> XP to LV ' + (pl.level + 1) + (close ? ' — almost there!' : '');
 
     var il = G.levelFromXp(st.incomeXp);
     $("incLvl").textContent = "Lv " + il.level;
@@ -1079,7 +1097,11 @@
     $("ratingTier").textContent = tier.name;
     $("ratingTrend").innerHTML = gain > 0 ? ('▲ <b>+' + gain.toLocaleString() + '</b> this week')
       : (gain < 0 ? ('▼ <b>' + Math.abs(gain).toLocaleString() + '</b> this week') : 'steady this week');
-    $("ratingNext").textContent = tier.next ? (tier.next + ' at ' + tier.nextAt.toLocaleString()) : 'Max tier reached';
+    var peak = Math.max(+st.powerPeak || 0, pr);
+    var nextTxt = tier.next ? (tier.next + ' at ' + tier.nextAt.toLocaleString()) : 'Max tier reached';
+    $("ratingNext").innerHTML = (peak > pr)
+      ? (nextTxt + ' · <span style="color:var(--gold)">★ best ' + peak.toLocaleString() + '</span>')
+      : (pr > 0 ? (nextTxt + ' · <span style="color:var(--gold)">★ personal best!</span>') : nextTxt);
     $("tierBar").style.width = tier.pct + '%';
   }
 

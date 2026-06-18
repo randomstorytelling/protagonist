@@ -188,7 +188,7 @@ test("v1 save migrates to v2 without data loss", function () {
     repDays: ["2026-6-10"],
   };
   var s = E.migrateV1toV2(v1, D(0));
-  eq(s.version, 2, "version 2");
+  eq(s.version, E.SCHEMA_VERSION, "migrated to current schema");
   eq(s.totalXp, 80, "totalXp = sum of dims");
   eq(s.incomeXp, 32, "incomeXp preserved");
   var key = String(E.dayIndex(new Date(2026, 5, 10, 12, 0, 0)));
@@ -198,12 +198,31 @@ test("v1 save migrates to v2 without data loss", function () {
 });
 
 test("init handles null, garbage, v1, and v2 safely", function () {
-  assert(E.init(null, D(0)).state.version === 2, "null -> fresh v2");
-  assert(E.init("}{not json", D(0)).state.version === 2, "garbage -> fresh v2");
+  var V = E.SCHEMA_VERSION;
+  assert(E.init(null, D(0)).state.version === V, "null -> fresh current-schema state");
+  assert(E.init("}{not json", D(0)).state.version === V, "garbage -> fresh current-schema state");
   var v1 = { name: "L", created: "2026-6-10", incomeXp: 10, dims: { physical: 5, mental: 0, spiritual: 0, financial: 10 }, history: {}, log: [], repDays: [] };
-  assert(E.init(JSON.stringify(v1), D(0)).state.version === 2, "v1 string -> migrated v2");
-  var v2 = E.newState("L", D(0));
-  assert(E.init(v2, D(0)).state.version === 2, "v2 object -> reconciled v2");
+  assert(E.init(JSON.stringify(v1), D(0)).state.version === V, "v1 string -> migrated to current schema");
+  var cur = E.newState("L", D(0));
+  assert(E.init(cur, D(0)).state.version === V, "current-schema object -> reconciled");
+});
+
+test("v2->v3 migration REBASES Big Wins to real milestones only (sales no longer count)", function () {
+  var day = E.dayIndex(D(0));
+  var v2 = E.newState("L", D(0)); v2.version = 2;
+  v2.bigWins = 47;   // inflated count from the old "every $200 sales day = big win" behavior
+  v2.log = [
+    { ts: 1, day: day, dim: "financial", name: "Amazon sale $300", big: true, amount: 300, source: "amazon" }, // sale: NOT a real win
+    { ts: 2, day: day, dim: "financial", name: "Shopify sale $250", big: true, amount: 250, source: "shopify" }, // sale: NOT a real win
+    { ts: 3, day: day, dim: "financial", name: "Booked a national commercial", big: true, amount: null, source: "manual" }, // REAL win
+    { ts: 4, day: day, dim: "financial", name: "Closed a wholesale account", big: true, amount: null, source: "smart" },     // REAL win
+    { ts: 5, day: day, dim: "physical", name: "50 push-ups", big: false, amount: null, source: "manual" },                    // not a win
+  ];
+  var m = E.migrateV2toV3(v2, D(0));
+  eq(m.version, 3, "bumped to v3");
+  eq(m.bigWins, 2, "rebased to the 2 REAL milestone wins (sales excluded), not the inflated 47");
+  // and it flows through init end-to-end
+  eq(E.init(JSON.stringify(v2), D(0)).state.bigWins, 2, "init migrates + rebases Big Wins");
 });
 
 test("validateRepair fills missing fields and rejects bad values", function () {
@@ -1012,6 +1031,19 @@ test("weeklyPulse + powerGain summarize the last 7 days", function () {
   var withSale = E.ingestExternal(s, [{ source: "amazon", kind: "sale", id: "G1", amount: 20000 }], D(1)).state;
   assert(E.powerGain(withSale, 7, D(1)) > 0, "Power Level rose this week (revenue came in)");
   eq(E.weeklyPulse(s, D(30)).reps, 0, "nothing in the last 7 days a month later");
+});
+
+test("powerPeak: a high-water mark that only rises, persists through a dip, and merges by max", function () {
+  var s = E.ingestExternal(fresh(D(0)), [{ source: "amazon", kind: "sale", id: "P1", amount: 26000 }], D(0)).state;
+  s = E.applyRep(s, "fin_close", D(0)).state;   // applyRep refreshes powerPeak to the live power
+  var peak = s.powerPeak;
+  assert(peak > 0 && peak === E.powerRating(s, D(0)), "peak captures the live power at its high point");
+  var dropped = E.init(JSON.stringify(s), D(40)).state;   // 40 days on, the sale ages out of the 30d window -> live power drops
+  assert(E.powerRating(dropped, D(40)) < peak, "live power dropped after revenue aged out");
+  assert(dropped.powerPeak >= peak, "peak is preserved through the dip (only ever rises)");
+  var a = fresh(D(0)); a.powerPeak = 4000;
+  var b = fresh(D(0)); b.powerPeak = 1500;
+  assert(E.mergeStates(a, b, D(0)).powerPeak >= 4000, "merge keeps the higher peak across devices");
 });
 
 test("sale family (sale/order/vybrance_sale) dedups to ONE credit per order id (no kind-aliasing farm)", function () {

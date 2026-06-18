@@ -15,7 +15,7 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
   var LOG_CAP = 1000;   // per-rep ledger bound. Sized so a single device needs ~3 months of offline activity
                         // to truncate it; mergeStates aggregates from the FULL union, so sub-cap divergence is lossless.
 
@@ -312,6 +312,7 @@
       // Generator signature: a once-a-day subjective gut-read of how the day FELT (1 Drained .. 4 Satisfied).
       // Objective output is XP; this is the feeling that tells a Generator the day was correct. Never penalizes.
       satisfaction: { byDay: {} }, // dayIndex -> level 1..4
+      powerPeak: 0,               // highest Power Level ever reached — a high-water mark that only rises (a record to chase)
     };
   }
 
@@ -430,6 +431,7 @@
         if (Number.isFinite(std) && std <= today + 1 && std >= today - 400 && stv >= 1 && stv <= 4) out.satisfaction.byDay[String(Math.floor(std))] = stv;
       }
     }
+    out.powerPeak = clamp(nonNeg(s.powerPeak), 0, CONFIG.powerLevel.scale);   // durable high-water mark (finite, bounded to scale)
     out.version = SCHEMA_VERSION;
     recomputeStreak(out, today); // streak is always derived, never trusted from disk
     return out;
@@ -462,10 +464,25 @@
     return s;
   }
 
+  // v2 -> v3: REBASE Big Wins to real milestones only. Earlier, every $200+ sales DAY was minted as a "Big Win",
+  // inflating the count (and the old Power Level). A real big win is a milestone rep (book a gig, close a deal) —
+  // it has big:true and NO $ amount (sales carry an amount). Recompute from the log so the trophy count is honest.
+  // Runs once per save; because mergeStates migrates each raw input first, even a stale v2 cloud doc gets rebased
+  // before merging, so devices converge on the corrected count instead of max()-ing the inflated one back in.
+  function migrateV2toV3(v2, now) {
+    var s = clone(v2);
+    var real = 0;
+    (Array.isArray(s.log) ? s.log : []).forEach(function (e) { if (e && e.big === true && e.amount == null) real++; });
+    s.bigWins = real;
+    s.version = 3;
+    return s;
+  }
+
   function migrateIfNeeded(s, now) {
     if (s && s.version === SCHEMA_VERSION) return s;
     if (!s || typeof s !== "object") return newState("Lawrence", now);
-    if (!s.version || s.version < 2) return migrateV1toV2(s, now);
+    if (!s.version || s.version < 2) return migrateV1toV2(s, now); // → current schema (newState-based)
+    if (s.version === 2) return migrateV2toV3(s, now);
     return s; // future/newer save — validateRepair coerces it
   }
 
@@ -524,6 +541,7 @@
     s = validateRepair(s, now);
     var before = isPenalized(s);
     s = reconcile(s, now);
+    s.powerPeak = Math.max(nonNeg(s.powerPeak), powerRating(s, now));   // keep the high-water mark current on load
     var events = [];
     if (!before && isPenalized(s)) events.push({ type: "PENALTY_INCURRED" });
     return { state: s, events: events };
@@ -747,6 +765,8 @@
     })();
 
     recomputeStreak(out, safeToday(now));       // streak is always derived from the merged history
+    // power peak: a high-water mark that only ever rises — take the max of both devices' bests and the merged live value
+    out.powerPeak = Math.max(nonNeg(A.powerPeak), nonNeg(B.powerPeak), powerRating(out, now));
     out.version = SCHEMA_VERSION;
     return out;
   }
@@ -817,6 +837,8 @@
       }
     }
 
+    var afterPower = powerRating(s, now);
+    if (afterPower > nonNeg(s.powerPeak)) { s.powerPeak = afterPower; events.push({ type: "POWER_PEAK", value: afterPower }); }   // new personal best
     return { state: s, events: events };
   }
 
@@ -1536,6 +1558,7 @@
     reconcileTo: reconcileTo,
     validateRepair: validateRepair,
     migrateV1toV2: migrateV1toV2,
+    migrateV2toV3: migrateV2toV3,
     recomputeStreak: recomputeStreak,
     applyRep: applyRep,
     applyRecurring: applyRecurring,
