@@ -511,8 +511,9 @@ test("externalActivityToRep maps financial sources (MCF, outreach, email, sale) 
   var o = E.externalActivityToRep({ kind: "outreach", id: "b1", count: 25 });
   eq(o.dim, "financial", "outreach -> financial");
   assert(o.xp >= 5 && o.xp <= 30, "outreach xp scaled & capped");
-  var big = E.externalActivityToRep({ kind: "sale", id: "s1", amount: 300 });
-  assert(big.big === true && big.dim === "financial", "big sale flagged");
+  var sale = E.externalActivityToRep({ kind: "sale", id: "s1", amount: 300 });
+  assert(sale.dim === "financial" && sale.amount === 300, "sale -> financial with $ amount recorded");
+  assert(!sale.big, "a sale is NOT flagged a Big Win (revenue, not a milestone)");
   eq(E.externalActivityToRep({ kind: "workout", id: "w", durationMin: 30, source: "whoop" }).dim, "physical", "WHOOP still works");
   eq(E.externalActivityToRep({ kind: "nope", id: "x" }), null, "unknown -> null");
 });
@@ -969,7 +970,7 @@ test("Vybrance sales credit as seeds, raise overall + power level, sum over 7 da
   var s = E.ingestExternal(s0, orders, D(0)).state;
   assert(s.totalXp > 0, "sales raise overall XP (the overall level)");
   assert(s.incomeXp > 0, "sales raise Earning Power (incomeXp)");
-  eq(s.bigWins, 1, "a $240 order is a big win");
+  eq(s.bigWins, 0, "a sale is NOT a Big Win — revenue, not a milestone (big wins = booking a gig / closing a deal)");
   eq(E.recentSalesTotal(s, 7, D(0)), 300, "7-day sales total sums order amounts");
   var s2 = E.ingestExternal(s, orders, D(0)).state;
   eq(s2.totalXp, s.totalXp, "re-ingesting the same orders is a no-op (deduped by id)");
@@ -977,19 +978,27 @@ test("Vybrance sales credit as seeds, raise overall + power level, sum over 7 da
   eq(E.recentSalesTotal(s, 7, D(10)), 0, "sales older than 7 days drop out of the window");
 });
 
-test("powerRating composites all activity, scales with streaks + recovery; tiers are bounded", function () {
-  eq(E.powerRating(fresh(D(0)), D(0)), 0, "fresh -> 0");
-  var s = E.applyRep(fresh(D(0)), "phys_pushups", D(0)).state;
-  var r1 = E.powerRating(s, D(0));
-  assert(r1 > 0, "rises with activity");
-  var s2 = E.applyRep(s, "fin_close", D(0)).state;     // big financial win
-  assert(E.powerRating(s2, D(0)) > r1, "a big win raises the rating");
+test("powerRating: live current-power readout (revenue + life + streaks × WHOOP), bounded 0..10000, milestone tiers", function () {
+  eq(E.powerRating(fresh(D(0)), D(0)), 0, "fresh -> 0 (no revenue, Lv1 dims, no streaks)");
+  // Vybrance revenue momentum drives it
+  var rev = E.ingestExternal(fresh(D(0)), [{ source: "amazon", kind: "sale", id: "R1", amount: 13000 }], D(0)).state;
+  assert(E.powerRating(rev, D(0)) > 0, "Vybrance revenue raises the Power Level");
+  // leveling a dimension drives it
+  var life = fresh(D(0)); for (var i = 0; i < 40; i++) life = E.applyRep(life, "ment_read", D(0)).state;
+  assert(E.powerRating(life, D(0)) > 0, "leveling a dimension raises the Power Level");
+  // bounded to the 0..10000 scale even when maxed out
+  var maxed = fresh(D(0));
+  ["physical", "mental", "spiritual", "family", "social", "financial"].forEach(function (d) { maxed.dims[d] = 1e6; });
+  maxed.salesByDay = {}; maxed.salesByDay[String(E.dayIndex(D(0)))] = 300000;
+  var prMax = E.powerRating(maxed, D(0)); assert(prMax > 5000 && prMax <= 10000, "bounded to 0..10000 (got " + prMax + ")");
+  // gear tiers anchor to real milestones on the new scale
   eq(E.powerTier(0).name, "Base Form", "0 -> Base Form");
-  eq(E.powerTier(2000).name, "Gear 3", "2000 -> Gear 3");
-  eq(E.powerTier(50000).name, "Sun God Nika", "50k -> Sun God Nika");
-  var t = E.powerTier(2000); assert(t.pct >= 0 && t.pct <= 100, "tier pct bounded");
-  var hi = JSON.parse(JSON.stringify(s2)); hi.whoop = { recovery: 100, zone: "green" };
-  var lo = JSON.parse(JSON.stringify(s2)); lo.whoop = { recovery: 0, zone: "red" };
+  eq(E.powerTier(1500).name, "Gear 2", "1500 -> Gear 2 (rebuilding)");
+  eq(E.powerTier(9000).name, "Sun God Nika", "9000 -> Sun God Nika (near peak + elite)");
+  var t = E.powerTier(1500); assert(t.pct >= 0 && t.pct <= 100, "tier pct bounded");
+  // WHOOP recovery nudges it
+  var hi = JSON.parse(JSON.stringify(rev)); hi.whoop = { recovery: 100, zone: "green" };
+  var lo = JSON.parse(JSON.stringify(rev)); lo.whoop = { recovery: 0, zone: "red" };
   assert(E.powerRating(hi, D(0)) > E.powerRating(lo, D(0)), "higher recovery -> higher power");
 });
 
@@ -999,7 +1008,9 @@ test("weeklyPulse + powerGain summarize the last 7 days", function () {
   var wp = E.weeklyPulse(s, D(1));
   eq(wp.reps, 2, "2 reps this week");
   assert(wp.xp > 0 && wp.activeDays === 2, "xp tallied + 2 active days");
-  assert(E.powerGain(s, 7, D(1)) > 0, "power banked this week > 0");
+  // powerGain is now the 7-day Power LEVEL delta (not raw XP): a fresh Vybrance sale this week moves it up
+  var withSale = E.ingestExternal(s, [{ source: "amazon", kind: "sale", id: "G1", amount: 20000 }], D(1)).state;
+  assert(E.powerGain(withSale, 7, D(1)) > 0, "Power Level rose this week (revenue came in)");
   eq(E.weeklyPulse(s, D(30)).reps, 0, "nothing in the last 7 days a month later");
 });
 
@@ -1082,10 +1093,12 @@ test("mergeStates is order-independent for profile, statPoints, and activeTitle 
   eq(JSON.stringify(ab.statPoints), JSON.stringify(ba.statPoints), "statPoints order-independent");
 });
 
-test("powerRating stays finite even for a corrupt astronomically-large save", function () {
+test("powerRating stays finite + bounded even for a corrupt astronomically-large save", function () {
   var s = fresh(D(0)); s.totalXp = 1e308; s.incomeXp = 1e308; s.bigWins = 1e6;
+  ["physical", "mental", "spiritual", "family", "social", "financial"].forEach(function (d) { s.dims[d] = 1e308; });
+  s.salesByDay = {}; s.salesByDay[String(E.dayIndex(D(0)))] = 1e308;
   var r = E.powerRating(s, D(0));
-  assert(Number.isFinite(r) && r >= 0, "powerRating never NaN/Infinity (got " + r + ")");
+  assert(Number.isFinite(r) && r >= 0 && r <= 10000, "powerRating never NaN/Infinity, bounded to scale (got " + r + ")");
 });
 
 test("recentSalesTotal is durable — survives the sale aging out of the capped log (salesByDay backstop)", function () {

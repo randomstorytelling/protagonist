@@ -1077,7 +1077,8 @@
     var pr = G.powerRating(st, now()), tier = G.powerTier(pr), gain = G.powerGain(st, 7, now());
     $("ratingNum").textContent = pr.toLocaleString();
     $("ratingTier").textContent = tier.name;
-    $("ratingTrend").innerHTML = gain > 0 ? ('▲ <b>+' + gain.toLocaleString() + '</b> this week') : 'log a rep to grow';
+    $("ratingTrend").innerHTML = gain > 0 ? ('▲ <b>+' + gain.toLocaleString() + '</b> this week')
+      : (gain < 0 ? ('▼ <b>' + Math.abs(gain).toLocaleString() + '</b> this week') : 'steady this week');
     $("ratingNext").textContent = tier.next ? (tier.next + ' at ' + tier.nextAt.toLocaleString()) : 'Max tier reached';
     $("tierBar").style.width = tier.pct + '%';
   }
@@ -1086,7 +1087,7 @@
   function renderPulse(){
     var wp = G.weeklyPulse(st, now());
     var tiles = [
-      ['+' + wp.powerGain.toLocaleString(), 'power'],
+      [(wp.powerGain >= 0 ? '+' : '−') + Math.abs(wp.powerGain).toLocaleString(), 'power'],
       [String(wp.reps), 'reps'],
       [wp.activeDays + '/7', 'active days'],
       ['$' + wp.sales.toLocaleString(), 'sales'],

@@ -51,6 +51,13 @@
     //    the LARGEST drivers of water turnover, which scales with body size.
     //  - ~35 mL/kg/day is the common active-adult clinical estimate; + ACSM sweat-replacement for training.
     hydration: { goalOz: 125, mlPerKg: { sedentary: 31, active: 35, athlete: 40 }, activityAllowanceOz: { sedentary: 0, active: 13, athlete: 26 } },
+    // POWER LEVEL — a LIVE readout of how Lawrence is operating right now (not a lifetime XP tally), on a 0..10,000
+    // scale, aligned to his real goals: rebuilding Vybrance revenue + a leveled, consistent life. Tunable anchors:
+    //  - peakMonthlyRevenue: his real ~$260k/mo Vybrance peak (Jul'25) = the revenue ceiling that maxes the revenue part.
+    //  - lifeLevelCap: the AVERAGE dimension level that maxes the life part (avg Lv 25 across the six dims = elite).
+    //  - streakCap: total live streak-days across the six dims that maxes consistency (~20-day streak on each).
+    //  - weights: revenue is the main quest, life is the foundation, consistency is the seasoning. Sum = 1.
+    powerLevel: { scale: 10000, peakMonthlyRevenue: 260000, lifeLevelCap: 25, streakCap: 120, weights: { revenue: 0.50, life: 0.35, consistency: 0.15 } },
   };
 
   var REPS = [
@@ -876,27 +883,33 @@
     return Math.round(Math.max(logSum, sbdSum));
   }
 
-  // ============================ POWER LEVEL — the culmination of all activities ============================
-  // One headline number that sums you up (à la WHOOP Age): total progress + earning power + big wins, scaled
-  // by CONSISTENCY (your live streaks) and VITALITY (WHOOP recovery). Deterministic & pure; it can dip if
-  // streaks break or recovery tanks, so it stays honest rather than only ratcheting up.
+  // ============================ POWER LEVEL — a LIVE readout of how you're operating NOW ============================
+  // NOT a lifetime XP tally (that only ever ratcheted up and blew past the top tier). Instead a 0..10,000 score
+  // that reflects your CURRENT trajectory and aligns to Lawrence's real goals — three normalized parts, each 0..max,
+  // blended by CONFIG.powerLevel.weights and nudged by WHOOP recovery:
+  //   R  Vybrance momentum  = trailing-30-day revenue as a run-rate toward the real ~$260k/mo peak
+  //   L  Life              = how high your six dimensions stand, on AVERAGE (rewards a leveled, balanced life)
+  //   C  Consistency       = your live streaks across all six dimensions
+  // It rises as you rebuild and can DIP if revenue stalls or streaks break, so it stays honest. Deterministic & pure.
   function powerRating(state, now) {
     if (!state || typeof state !== "object") return 0;
-    var core = nonNeg(state.totalXp);                 // everything you've ever logged
-    var earn = 1.5 * nonNeg(state.incomeXp);          // earning power, weighted (it's the main quest)
-    var wins = 50 * nonNeg(state.bigWins);            // big wins punch above their XP
-    var streaks = 0;
-    DIMENSIONS.forEach(function (d) { streaks += dimStreak(state, d, now); });
-    var consistency = 1 + 0.01 * Math.min(streaks, 60);          // keeping every streak alive => up to +60%
+    var cfg = CONFIG.powerLevel, MAX = cfg.scale, w = cfg.weights;
+    var R = clamp(recentSalesTotal(state, 30, now) / cfg.peakMonthlyRevenue, 0, 1) * MAX;   // revenue run-rate
+    var lifeSum = 0; DIMENSIONS.forEach(function (d) { lifeSum += levelFromXp(nonNeg(state.dims && state.dims[d])).level; });
+    var L = clamp(((lifeSum / DIMENSIONS.length) - 1) / (cfg.lifeLevelCap - 1), 0, 1) * MAX; // avg dim level above the Lv1 floor
+    var streaks = 0; DIMENSIONS.forEach(function (d) { streaks += dimStreak(state, d, now); });
+    var C = clamp(streaks / cfg.streakCap, 0, 1) * MAX;                                       // live streak-days
     var rec = (state.whoop && state.whoop.recovery != null) ? clamp(num(state.whoop.recovery, 70), 0, 100) : 70;
-    var vitality = 0.80 + 0.20 * (rec / 100);                    // 0.80–1.00 — your body's readiness nudges your power
-    var r = Math.round((core + earn + wins) * consistency * vitality);
-    return Number.isFinite(r) ? Math.max(0, Math.min(r, 9e15)) : 0;   // never NaN/Infinity, even on a corrupt save
+    var vitality = 0.85 + 0.15 * (rec / 100);                                                 // 0.85–1.00 WHOOP nudge
+    var r = Math.round((w.revenue * R + w.life * L + w.consistency * C) * vitality);
+    return Number.isFinite(r) ? Math.max(0, Math.min(r, MAX)) : 0;   // never NaN/Infinity, bounded to the scale
   }
-  // power stages = Luffy's gears (One Piece): the Power Level tier you're in == the gear you've unlocked.
+  // power stages = Luffy's gears (One Piece), anchored to REAL milestones on the 0..10,000 scale:
+  //   Gear 2 ≈ rebuilding (~$12k/mo + showing up) · Gear 3 ≈ ~$30k/mo · Gear 4 ≈ ~$60k/mo ·
+  //   Gear 5 ≈ ~$100k/mo + life dialed in · Sun God Nika ≈ Vybrance near peak + elite consistency.
   var POWER_TIERS = [
-    { min: 0, name: "Base Form" }, { min: 600, name: "Gear 2" }, { min: 1800, name: "Gear 3" },
-    { min: 4500, name: "Gear 4" }, { min: 11000, name: "Gear 5" }, { min: 28000, name: "Sun God Nika" },
+    { min: 0, name: "Base Form" }, { min: 1000, name: "Gear 2" }, { min: 2200, name: "Gear 3" },
+    { min: 3500, name: "Gear 4" }, { min: 5200, name: "Gear 5" }, { min: 8500, name: "Sun God Nika" },
   ];
   function powerTier(rating) {
     var r = POWER_TIERS[0], idx = 0;
@@ -906,18 +919,11 @@
     return { name: r.name, min: prevMin, next: next ? next.name : null, nextAt: next ? next.min : null,
              pct: next ? clamp(Math.round(((rating - prevMin) / span) * 100), 0, 100) : 100 };
   }
-  // "power banked" in the last `days` — the weekly trend (base activity from the log, +0.5x extra for income reps).
+  // how much your Power Level MOVED over the last `days` (can be negative — the score is a live readout, not a tally).
   function powerGain(state, days, now) {
-    var today = effectiveDay(state, now);
-    var since = today - (Math.max(1, num(days, 7)) - 1);
-    var log = (state && state.log) || [];
-    var g = 0;
-    log.forEach(function (e) {
-      if (!e || num(e.day, -1) < since) return;
-      g += nonNeg(e.baseXp != null ? e.baseXp : e.xp);
-      if (e.dim === "financial") g += 0.5 * nonNeg(e.xp);
-    });
-    return Math.round(g);
+    var n = Math.max(2, num(days, 7) + 1);   // include the start point `days` ago plus today
+    var tr = ratingTrend(state, n, now);
+    return Math.round(tr[tr.length - 1].rating - tr[0].rating);
   }
   // 7-day rollup for the Weekly Pulse card (reps, XP, active days, top dimension, sales, best live streak). Pure.
   function weeklyPulse(state, now) {
@@ -988,12 +994,12 @@
       };
     }
     return [
-      // NOTE: this ladder intentionally has ONE extra tier vs POWER_TIERS (the Power-card gear stages): the DBZ
-      // "It's Over 9,000!" easter egg at 9000. POWER_TIERS stays pure Luffy gears for the headline card; this
-      // achievement track is the worlds-mixed view. The divergence is deliberate, not drift — don't "unify" it away.
+      // Mirrors the Power-card gear tiers on the 0..10,000 scale, then adds the DBZ "It's Over 9,000!" easter egg
+      // as the ultimate flex ABOVE Sun God Nika — you've literally crossed 9,000 (only near-perfect revenue + life +
+      // streaks gets you there). The extra top tier is deliberate, not drift — don't "unify" it away.
       T("power", "Power Level", "⚡", "One Piece × DBZ", "", rating,
-        [L(600, "Gear 2"), L(1800, "Gear 3"), L(4500, "Gear 4"), L(9000, "It's Over 9,000!"), L(11000, "Gear 5"), L(28000, "Sun God Nika")],
-        "Raise your Power Level — the culmination number; it climbs as XP, streaks, sales, and recovery stack."),
+        [L(1000, "Gear 2"), L(2200, "Gear 3"), L(3500, "Gear 4"), L(5200, "Gear 5"), L(8500, "Sun God Nika"), L(9000, "It's Over 9,000!")],
+        "Raise your Power Level — your live readout: Vybrance revenue + life levels + live streaks, scaled by WHOOP."),
       T("actualization", "Actualization", "🧬", "Human Design 6/3", "Lv", lvl,
         [L(5, "Experimenter"), L(10, "Builder"), L(18, "Master"), L(28, "Sage"), L(42, "Role Model"), L(60, "Actualized")],
         "Level up your overall character (total XP across all six dimensions) — the 6/3 Generator path from trial-and-error to self-actualized."),
@@ -1041,23 +1047,35 @@
         "Show up on more days total — every day you log anything counts."),
     ];
   }
-  // reconstruct a Power Level trend for the last `days` from the per-rep log (the recent ledger), so the
-  // cumulative shape is exact for logged days; progress older than the log sits at a flat floor. The series is
-  // scaled so its final point equals the live powerRating (endpoint-accurate). Pure.
+  // reconstruct the Power Level trend for the last `days`. The score's most volatile, cheaply-reconstructable part
+  // is REVENUE momentum, so we vary the trailing-30-day revenue per day (from the durable salesByDay record) and
+  // hold life/consistency/vitality at their current values (they aren't accurately back-computable per day). The
+  // final point therefore equals the live powerRating (endpoint-accurate). Pure.
   function ratingTrend(state, days, now) {
     var s = state || {};
     var today = effectiveDay(s, now), n = Math.max(2, num(days, 14)), since = today - (n - 1);
-    var log = (s.log || []);
-    var sumBase = 0, sumIncome = 0;
-    log.forEach(function (e) { if (!e) return; sumBase += nonNeg(e.baseXp != null ? e.baseXp : e.xp); if (e.dim === "financial") sumIncome += nonNeg(e.xp); });
-    var floorTotal = Math.max(0, nonNeg(s.totalXp) - sumBase), floorIncome = Math.max(0, nonNeg(s.incomeXp) - sumIncome);
-    var rawToday = nonNeg(s.totalXp) + 1.5 * nonNeg(s.incomeXp), live = powerRating(s, now);
-    var scale = rawToday > 0 ? (live / rawToday) : 1;
+    var cfg = CONFIG.powerLevel, MAX = cfg.scale, w = cfg.weights;
+    var log = s.log || [], sbd = s.salesByDay || {};
+    // life reconstruction: floor (per-dim XP older than the log window) + logged baseXp up to each day, so the
+    // trend reflects dimension-level gains over the window. Endpoint == current dims, so it stays endpoint-exact.
+    var loggedByDim = emptyDay(), floorDim = emptyDay();
+    log.forEach(function (e) { if (e && DIMENSIONS.indexOf(e.dim) !== -1) loggedByDim[e.dim] += nonNeg(e.baseXp != null ? e.baseXp : e.xp); });
+    DIMENSIONS.forEach(function (d) { floorDim[d] = Math.max(0, nonNeg(s.dims && s.dims[d]) - loggedByDim[d]); });
+    // consistency + vitality held current (streaks aren't accurately back-computable per day)
+    var streaks = 0; DIMENSIONS.forEach(function (d) { streaks += dimStreak(s, d, now); });
+    var C = clamp(streaks / cfg.streakCap, 0, 1) * MAX;
+    var rec = (s.whoop && s.whoop.recovery != null) ? clamp(num(s.whoop.recovery, 70), 0, 100) : 70;
+    var vitality = 0.85 + 0.15 * (rec / 100);
     var series = [];
     for (var d = since; d <= today; d++) {
-      var ct = floorTotal, ci = floorIncome;
-      log.forEach(function (e) { if (!e || num(e.day, Infinity) > d) return; ct += nonNeg(e.baseXp != null ? e.baseXp : e.xp); if (e.dim === "financial") ci += nonNeg(e.xp); });
-      series.push({ day: d, rating: Math.round((ct + 1.5 * ci) * scale) });
+      var rev = 0, lo = d - 29;
+      for (var k in sbd) if (Object.prototype.hasOwnProperty.call(sbd, k)) { var dk = num(k, -1); if (dk >= lo && dk <= d) rev += nonNeg(sbd[k]); }
+      var R = clamp(rev / cfg.peakMonthlyRevenue, 0, 1) * MAX;
+      var dimXP = {}; DIMENSIONS.forEach(function (dd) { dimXP[dd] = floorDim[dd]; });
+      log.forEach(function (e) { if (e && DIMENSIONS.indexOf(e.dim) !== -1 && num(e.day, Infinity) <= d) dimXP[e.dim] += nonNeg(e.baseXp != null ? e.baseXp : e.xp); });
+      var lifeSum = 0; DIMENSIONS.forEach(function (dd) { lifeSum += levelFromXp(dimXP[dd]).level; });
+      var L = clamp(((lifeSum / DIMENSIONS.length) - 1) / (cfg.lifeLevelCap - 1), 0, 1) * MAX;
+      series.push({ day: d, rating: Math.round((w.revenue * R + w.life * L + w.consistency * C) * vitality) });
     }
     return series;
   }
@@ -1279,12 +1297,14 @@
       case "sale":
       case "order":
       case "vybrance_sale": {
-        // a real Vybrance sale = a "seed for growth": it credits Financial XP, which raises BOTH the overall
-        // level (totalXp) and Earning Power (incomeXp). Deduped by order id, so each sale counts once.
+        // a real Vybrance sale = a "seed for growth": it credits Financial XP (raising the overall level + Earning
+        // Power) and records the $ amount (which drives the Power Level's revenue momentum). Deduped by order id.
+        // NOTE: a sale is NOT a "Big Win" — big wins are real milestones (booking a gig, closing a wholesale account).
+        // Tagging every $200 sales day as a big win inflated both the Big Wins count and the old Power Level.
         var amt = num(a.amount, 0);
         var src = a.source || "shopify";
         var srcLabel = src === "amazon" ? "Amazon" : (src === "shopify" ? "Shopify" : src);
-        return { id: "sale", dim: "financial", amount: amt, name: "🌱 " + srcLabel + " sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), big: amt >= 200, source: src };
+        return { id: "sale", dim: "financial", amount: amt, name: "🌱 " + srcLabel + " sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), source: src };
       }
       case "task": {
         // a completed Google Task -> classify its title into the right dimension (call mom -> family,
