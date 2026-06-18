@@ -35,6 +35,14 @@ jobs:
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
         run: node tasks-feed.js 7
+      # Calendar runs after Tasks (same job = sequential, so they can't race the users/{uid} write). Auto-credits
+      # started calendar events into the right dimension, so just living your scheduled day fills the Daily Quest.
+      # Needs the shared Google token to also have the calendar.readonly scope (see FEED_CREDS).
+      - name: Sync started Google Calendar events -> Firestore
+        if: always()
+        env:
+          PROTAG_UID: ${{ secrets.PROTAG_UID }}
+        run: node calendar-feed.js 1
       # WHOOP runs AFTER tasks in the same job (sequential) so the two can't race the users/{uid} write.
       # Its WHOOP token + client creds live in the private Firestore doc _feed/whoop (not in any secret).
       - name: Sync WHOOP -> Firestore

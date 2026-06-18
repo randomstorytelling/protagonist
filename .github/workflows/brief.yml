@@ -1,0 +1,44 @@
+name: morning-brief
+# The autonomous "Game Master": reads the user's PRIVATE Firestore game state, computes the daily brief, and
+# EMAILS it (Gmail API) so the System comes to the user — no app needed. Runs in GitHub's cloud (no Mac).
+#
+# Cron is UTC. 12:30 UTC == ~7:30 AM CDT / 6:30 AM CST (America/Chicago) — a morning glance to start the day.
+# GitHub cron is best-effort; a little lag is fine for a daily digest.
+# Creds: FEED_CREDS.firebase_refresh_token (owner, for the Firestore read) + the shared google-tasks OAuth token,
+# which must additionally have the `gmail.send` scope. PROTAG_UID identifies the user doc.
+on:
+  schedule:
+    - cron: "30 12 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: morning-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Materialize credentials from the single FEED_CREDS secret
+        env:
+          FEED_CREDS: ${{ secrets.FEED_CREDS }}
+        run: |
+          mkdir -p "$HOME/.config/configstore" "$HOME/.config/google-tasks"
+          node -e '
+            let c;
+            try { c = JSON.parse(process.env.FEED_CREDS || ""); }
+            catch (e) { console.error("FEED_CREDS is not valid JSON"); process.exit(1); }   // never echo the secret
+            const fs = require("fs"), os = require("os"), p = require("path"), d = os.homedir();
+            fs.writeFileSync(p.join(d, ".config/configstore/firebase-tools.json"), JSON.stringify({ tokens: { refresh_token: c.firebase_refresh_token } }));
+            fs.writeFileSync(p.join(d, ".config/google-tasks/client.json"), JSON.stringify(c.google_tasks_client));
+            fs.writeFileSync(p.join(d, ".config/google-tasks/tokens.json"), JSON.stringify(c.google_tasks_tokens));
+          '
+      - name: Compose + email the morning brief
+        env:
+          PROTAG_UID: ${{ secrets.PROTAG_UID }}
+          BRIEF_TO: ${{ secrets.BRIEF_TO }}
+        run: node morning-brief.js

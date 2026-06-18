@@ -1264,6 +1264,45 @@ test("sacralQueue: ordered candidate reps, excludes big wins, energy-aware", fun
   assert(["phys_sleep", "phys_mobility", "spir_rest", "spir_meditate", "spir_nature", "fam_time", "soc_friend"].indexOf(qr[0].id) !== -1, "red recovery floats a restorative rep to the front (got " + qr[0].id + ")");
 });
 
+// ---------------------------------------------------------------- autonomy: calendar feed + morning brief
+test("calendar events auto-classify into dimensions; vague blocks are skipped; never auto-big-win", function () {
+  function cal(title) { return E.externalActivityToRep({ kind: "calendar", id: "x", title: title }); }
+  eq(cal("Therapy session").dim, "mental", "therapy -> mental");
+  eq(cal("Gym workout").dim, "physical", "gym -> physical");
+  eq(cal("Lunch with Sam").dim, "social", "lunch with -> social");
+  eq(cal("Call mom").dim, "family", "call mom -> family");
+  eq(cal("Self-tape audition").dim, "financial", "audition -> financial");
+  assert(cal("Sync meeting") === null, "a vague block is skipped (no rep spam)");
+  assert(cal("Busy") === null, "another vague block skipped");
+  var booked = cal("Booked a national commercial");
+  assert(!(booked && booked.big), "a scheduled event never auto-mints a Big Win");
+  // end-to-end ingest + dedup by event id
+  var s = E.ingestExternal(fresh(D(0)), [
+    { source: "calendar", kind: "calendar", id: "evt1", title: "Therapy session" },
+    { source: "calendar", kind: "calendar", id: "evt2", title: "Gym" },
+  ], D(0)).state;
+  var day = String(E.dayIndex(D(0)));
+  assert(s.history[day].mental >= 1 && s.history[day].physical >= 1, "calendar events credited their dims");
+  var s2 = E.ingestExternal(s, [{ source: "calendar", kind: "calendar", id: "evt1", title: "Therapy session" }], D(0)).state;
+  eq(s2.totalXp, s.totalXp, "re-ingesting the same event id is a no-op (deduped)");
+});
+
+test("dailyBrief returns a structured glanceable summary (power, momentum, dims hit/quiet, the one rep)", function () {
+  var s = E.ingestExternal(fresh(D(0)), [{ source: "amazon", kind: "sale", id: "B1", amount: 18000 }], D(0)).state;
+  s = E.applyRep(s, "phys_pushups", D(0)).state;
+  s = E.applyRep(s, "ment_read", D(0)).state;
+  var b = E.dailyBrief(s, D(0));
+  assert(typeof b.powerLevel === "number" && b.powerLevel >= 0, "powerLevel present");
+  assert(typeof b.tier === "string" && b.tier.length, "tier name present");
+  assert(b.sales7d === 18000, "7-day sales surfaced");
+  eq(b.dimsHit.length + b.dimsQuiet.length, 6, "every dimension is either hit or quiet");
+  assert(b.dimsHit.indexOf("physical") !== -1 && b.dimsHit.indexOf("mental") !== -1, "today's trained dims are 'hit'");
+  assert(b.dimsQuiet.indexOf("spiritual") !== -1, "an untouched dim is 'quiet'");
+  assert(b.topRep && b.topRep.id && b.topRep.dim, "surfaces the one rep that matters (energy-aware)");
+  assert(typeof b.peak === "number" && b.peak >= b.powerLevel, "peak >= current");
+  eq(b.dailyTotal, 6, "daily quest total = 6");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");

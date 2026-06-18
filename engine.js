@@ -969,6 +969,32 @@
     };
   }
 
+  // ---- the morning BRIEF: the glanceable daily summary the autonomous "game master" sends you, so the System
+  // comes to YOU and you don't have to open the app. Pure — a Node cron reads your cloud state, calls this, and
+  // formats it into an email / push. Returns structured data: headline number, momentum, what's done/quiet today,
+  // the single rep that matters most right now (energy-aware), and your body's readiness. ----
+  function dailyBrief(state, now) {
+    var s = state || {};
+    var td = effectiveDay(s, now);
+    var pr = powerRating(s, now), tier = powerTier(pr), gain = powerGain(s, 7, now), peak = nonNeg(s.powerPeak);
+    var dp = dailyProgress(s, td), h = repsOn(s, td);
+    var hit = [], quiet = [];
+    DIMENSIONS.forEach(function (d) { (((h[d] || 0) > 0 || (d === "physical" && physicalWaived(s, td))) ? hit : quiet).push(d); });
+    var q = sacralQueue(s, now), topRep = q.length ? q[0] : null;
+    return {
+      day: td,
+      powerLevel: pr, tier: tier.name, nextTier: tier.next, nextAt: tier.nextAt, tierPct: tier.pct,
+      weekChange: gain, peak: Math.max(peak, pr), atBest: pr > 0 && pr >= peak,
+      sales7d: recentSalesTotal(s, 7, now),
+      streak: (s.streak && s.streak.current) || 0,
+      dailyDone: dp.done, dailyTotal: dp.total, dailyMet: dp.met,
+      dimsHit: hit, dimsQuiet: quiet,
+      topRep: topRep,                 // {id, dim, name, xp} — the one rep to respond to today (or null)
+      whoopZone: (s.whoop && s.whoop.zone) || null,
+      recovery: (s.whoop && s.whoop.recovery != null) ? Math.round(num(s.whoop.recovery, 0)) : null,
+    };
+  }
+
   // count history days where ALL six dimensions were trained / any dimension was trained
   function allSixDaysCount(state) {
     var h = state && state.history, c = 0; if (!h) return 0;
@@ -1337,6 +1363,16 @@
         var txp = c ? Math.min(c.xp, 30) : 10;
         return { id: "gtask", dim: tdim, xp: txp, name: (t || "Task") + " ✓", big: !!(c && c.big && tdim === "financial"), source: a.source || "google-tasks" };
       }
+      case "calendar": {
+        // a real calendar EVENT -> classify its title into a dimension (therapy->mental, gym->physical, "lunch with
+        // Sam"->social, "call mom"->family, audition->financial), so just living your scheduled day auto-fills the
+        // Daily Quest. SKIP vague blocks (low-confidence / "General") so "Meeting"/"Focus" don't spam reps, and never
+        // auto-mint a Big Win from a scheduled event (a calendar entry is an intention, not a confirmed milestone).
+        var ct = String(a.title || a.name || "");
+        var cc = classifyActivity(ct);
+        if (!cc || cc.confidence < 0.4 || cc.categoryId === "general") return null;
+        return { id: "cal", dim: cc.dim, xp: clamp(Math.min(cc.xp, 30), 5, 30), name: "📅 " + ct.slice(0, 60), source: a.source || "calendar" };
+      }
       default:
         return null;
     }
@@ -1569,6 +1605,7 @@
     powerTier: powerTier,
     powerGain: powerGain,
     weeklyPulse: weeklyPulse,
+    dailyBrief: dailyBrief,
     achievements: achievements,
     ratingTrend: ratingTrend,
     physicalWaived: physicalWaived,
