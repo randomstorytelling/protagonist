@@ -212,7 +212,7 @@
   }
   function rank(s) { return rankForLevel(playerLevel(s)); }
 
-  function repsOn(s, day) { return s.history[day] || emptyDay(); }
+  function repsOn(s, day) { return (s && s.history && s.history[day]) || emptyDay(); }   // null-safe: keeps dailyProgress/dimStreak/dailyBrief from throwing on a partial state
   function engineDimsActive(s, day) {
     var h = repsOn(s, day), n = 0;
     for (var i = 0; i < ENGINE_DIMS.length; i++) if ((h[ENGINE_DIMS[i]] || 0) > 0) n++;
@@ -571,7 +571,7 @@
       var bx = num(e.baseXp, num(e.xp, 0));
       a.total += bx; a.dims[e.dim] += bx;
       if (e.dim === "financial") a.income += num(e.xp, 0);
-      if (e.big) a.big += 1;
+      if (e.big && e.amount == null) a.big += 1; // a real big win has NO $ amount; legacy v2 sales-as-big-wins (amount set) don't count (matches migrateV2toV3's discriminator)
       var dk = Number(e.day);
       if (Number.isFinite(dk)) { var key = String(dk); if (!a.dayDim[key]) a.dayDim[key] = emptyDay(); a.dayDim[key][e.dim] += 1; }
     });
@@ -602,13 +602,16 @@
     // FULL deduped union FIRST and aggregate from THAT (gU below); only AFTER do we slice for storage. The
     // earlier code aggregated from the already-sliced out.log, so a union exceeding the cap silently dropped
     // reps/XP — the aggregate must see EVERY unioned rep, not just the most-recent cap of them.
+    function logKey(e) { return e.extKey ? ("x|" + e.extKey) : (num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0)); }
     var seenLog = {}, log = [];
     (A.log || []).concat(B.log || []).forEach(function (e) {
       if (!e) return;
-      var key = e.extKey ? ("x|" + e.extKey) : (num(e.ts, 0) + "|" + e.dim + "|" + e.name + "|" + num(e.xp, 0));
-      if (!seenLog[key]) { seenLog[key] = 1; log.push(e); }
+      if (!seenLog[logKey(e)]) { seenLog[logKey(e)] = 1; log.push(e); }
     });
-    log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0); });
+    // TOTAL order: newest-first by ts, then a deterministic tie-break on the dedup key. Without the tie-break,
+    // same-ts reps (a whole feed batch shares one `now`) sorted by arg-order, so two devices never byte-converged
+    // (CRDT contract violation + a spurious re-push every snapshot, and an order-dependent LOG_CAP slice boundary).
+    log.sort(function (x, y) { return num(y.ts, 0) - num(x.ts, 0) || logKey(x).localeCompare(logKey(y)); });
     out.log = log.slice(0, LOG_CAP);   // recent ledger for display; aggregates use the FULL union (gU) below
 
     // CRDT-style aggregate merge. Divergent reps are RECENT (in the unioned log); older reps are shared (equal
@@ -641,13 +644,16 @@
     });
 
     // dedup set: UNION, keeping the EARLIEST ingested day (so a re-sync after merge can't re-credit)
-    out.external = { seen: {} };
+    var seenMerge = {};
     [A.external.seen, B.external.seen].forEach(function (src) {
       for (var sk in src) if (Object.prototype.hasOwnProperty.call(src, sk)) {
         var v = num(src[sk], null); if (v === null) continue;
-        out.external.seen[sk] = (out.external.seen[sk] === undefined) ? v : Math.min(out.external.seen[sk], v);
+        seenMerge[sk] = (seenMerge[sk] === undefined) ? v : Math.min(seenMerge[sk], v);
       }
     });
+    // rebuild with SORTED keys so the merged doc is byte-identical regardless of merge order (kills a spurious re-push)
+    out.external = { seen: {} };
+    Object.keys(seenMerge).sort().forEach(function (sk) { out.external.seen[sk] = seenMerge[sk]; });
     pruneSeen(out.external.seen);   // keep the dedup set bounded after the union (it was grown unbounded on merge)
 
     // recurring upkeep: most-recent completion per id
@@ -1101,13 +1107,15 @@
   // final point therefore equals the live powerRating (endpoint-accurate). Pure.
   function ratingTrend(state, days, now) {
     var s = state || {};
-    var today = effectiveDay(s, now), n = Math.max(2, num(days, 14)), since = today - (n - 1);
+    var today = effectiveDay(s, now), n = clamp(Math.round(num(days, 14)), 2, 400), since = today - (n - 1);  // cap the window (O(n*log)) so a huge `days` can't OOM
     var cfg = CONFIG.powerLevel, MAX = cfg.scale, w = cfg.weights;
     var log = s.log || [], sbd = s.salesByDay || {};
     // life reconstruction: floor (per-dim XP older than the log window) + logged baseXp up to each day, so the
-    // trend reflects dimension-level gains over the window. Endpoint == current dims, so it stays endpoint-exact.
+    // trend reflects dimension-level gains over the window. The floor sums logged baseXp with the SAME day filter
+    // (day <= today) the per-day loop uses, so a future-dated entry stays entirely in the floor — keeping the
+    // endpoint exactly equal to powerRating's dims-based life term even under cross-device clock skew.
     var loggedByDim = emptyDay(), floorDim = emptyDay();
-    log.forEach(function (e) { if (e && DIMENSIONS.indexOf(e.dim) !== -1) loggedByDim[e.dim] += nonNeg(e.baseXp != null ? e.baseXp : e.xp); });
+    log.forEach(function (e) { if (e && DIMENSIONS.indexOf(e.dim) !== -1 && num(e.day, Infinity) <= today) loggedByDim[e.dim] += nonNeg(e.baseXp != null ? e.baseXp : e.xp); });
     DIMENSIONS.forEach(function (d) { floorDim[d] = Math.max(0, nonNeg(s.dims && s.dims[d]) - loggedByDim[d]); });
     // consistency + vitality held current (streaks aren't accurately back-computable per day)
     var streaks = 0; DIMENSIONS.forEach(function (d) { streaks += dimStreak(s, d, now); });

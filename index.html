@@ -722,7 +722,11 @@
           // CRITICAL: an empty LOCAL cache reports !exists too. Seeding here would clobber real cloud
           // data on any fresh device/browser. Only seed when the SERVER confirms the doc is truly absent.
           if(snap.metadata.fromCache) return;
-          try{ fbDoc.set(st); }catch(e){}                   // genuine first-ever sign-in -> seed from local
+          // genuine first-ever sign-in -> seed from local. TRANSACTIONAL (not a blind set) so if a feed cron created
+          // the doc in the tiny window since this !exists read, its freshly-credited reps are MERGED, not clobbered.
+          FB.db.runTransaction(function(tx){
+            return tx.get(fbDoc).then(function(doc){ tx.set(fbDoc, (doc && doc.exists) ? G.mergeStates(st, doc.data(), now()) : st); });
+          }).then(function(){ flagCloudError(false); }).catch(function(e){ flagCloudError(e); });
           cloudReady = true; serverSynced = true; refreshSyncStatus();
           return;
         }

@@ -18,6 +18,8 @@ concurrency:
 jobs:
   brief:
     runs-on: ubuntu-latest
+    env:
+      TZ: America/Chicago   # dailyBrief resolves "today" from the process tz; pin to the app so the brief reflects the right day
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

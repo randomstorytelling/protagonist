@@ -45,9 +45,15 @@ async function googleToken() {
   items.forEach(function (e) {
     if (!e || !e.summary || e.status === "cancelled") return;
     // only credit events that have ALREADY started (don't pre-credit a future plan you might skip)
-    var startStr = e.start && (e.start.dateTime || e.start.date);
-    var startMs = startStr ? Date.parse(startStr) : NaN;
-    if (!Number.isFinite(startMs) || startMs > now) return;
+    if (e.start && e.start.date && !e.start.dateTime) {
+      // all-day events carry a bare YYYY-MM-DD; Date.parse() reads it as UTC midnight, which passes the "started"
+      // gate hours BEFORE the local day even begins. Gate on the user's LOCAL calendar day instead (en-CA = ISO).
+      var todayYMD = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+      if (e.start.date > todayYMD) return;   // all-day event dated for a future local day -> not started yet
+    } else {
+      var startMs = e.start && e.start.dateTime ? Date.parse(e.start.dateTime) : NaN;
+      if (!Number.isFinite(startMs) || startMs > now) return;
+    }
     // skip events you declined
     var declined = (e.attendees || []).some(function (a) { return a.self && a.responseStatus === "declined"; });
     if (declined) return;

@@ -20,6 +20,8 @@ concurrency:
 jobs:
   pull:
     runs-on: ubuntu-latest
+    env:
+      TZ: America/Chicago   # the credit's day-index comes from the process tz; pin to the app so the sale lands on the right day
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

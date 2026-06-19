@@ -14,6 +14,11 @@ concurrency:
 jobs:
   google-tasks:
     runs-on: ubuntu-latest
+    env:
+      # CRITICAL: the engine derives a rep's day-index from the PROCESS-local timezone (device offset). The GitHub
+      # runner is UTC, so without this an evening-Central rep (after ~7pm, when UTC already rolled over) would be
+      # filed under TOMORROW's day — wrong Daily-Quest coverage + an early quest rollover. Pin the runner to the app.
+      TZ: America/Chicago
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,7 +30,9 @@ jobs:
         run: |
           mkdir -p "$HOME/.config/configstore" "$HOME/.config/google-tasks"
           node -e '
-            const c = JSON.parse(process.env.FEED_CREDS);
+            let c;
+            try { c = JSON.parse(process.env.FEED_CREDS || ""); }
+            catch (e) { console.error("FEED_CREDS is not valid JSON"); process.exit(1); }   // never echo the secret
             const fs = require("fs"), os = require("os"), p = require("path"), d = os.homedir();
             fs.writeFileSync(p.join(d, ".config/configstore/firebase-tools.json"), JSON.stringify({ tokens: { refresh_token: c.firebase_refresh_token } }));
             fs.writeFileSync(p.join(d, ".config/google-tasks/client.json"), JSON.stringify(c.google_tasks_client));
@@ -42,7 +49,7 @@ jobs:
         if: always()
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
-        run: node calendar-feed.js 1
+        run: node calendar-feed.js 7   # wide window: dedup makes re-credits free, so a skipped/delayed cron never drops a day
       # WHOOP runs AFTER tasks in the same job (sequential) so the two can't race the users/{uid} write.
       # Its WHOOP token + client creds live in the private Firestore doc _feed/whoop (not in any secret).
       - name: Sync WHOOP -> Firestore

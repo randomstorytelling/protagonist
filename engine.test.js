@@ -1303,6 +1303,50 @@ test("dailyBrief returns a structured glanceable summary (power, momentum, dims 
   eq(b.dailyTotal, 6, "daily quest total = 6");
 });
 
+// ---------------------------------------------------------------- foundation-audit regressions
+test("legacy big:true sales do NOT re-inflate the rebased Big Wins count on merge (logAgg == migrateV2toV3)", function () {
+  var day = E.dayIndex(D(0));
+  var s = E.newState("L", D(0));
+  s.bigWins = 1;   // already rebased to the 1 real milestone
+  s.log = [
+    { ts: 3, day: day, dim: "financial", name: "Booked a gig", big: true, amount: null },     // real win
+    { ts: 2, day: day, dim: "financial", name: "Amazon sale $300", big: true, amount: 300 },   // legacy sale-as-bigwin
+    { ts: 1, day: day, dim: "financial", name: "Shopify sale $250", big: true, amount: 250 },  // legacy sale-as-bigwin
+  ];
+  eq(E.mergeStates(s, s, D(0)).bigWins, 1, "self-merge preserves the honest count (legacy sales excluded)");
+  eq(E.mergeStates(s, E.newState("L", D(0)), D(0)).bigWins, 1, "merge with an empty device stays honest (no re-inflation)");
+});
+
+test("ratingTrend window is clamped (a huge `days` can't OOM); powerGain stays finite", function () {
+  var s = fresh(D(0));
+  var tr = E.ratingTrend(s, 1e9, D(0));
+  assert(Array.isArray(tr) && tr.length <= 400, "window capped at 400 (got " + tr.length + ")");
+  assert(Number.isFinite(E.powerGain(s, 1e9, D(0))), "powerGain finite for a huge window");
+});
+
+test("ratingTrend endpoint == powerRating even with a future-dated log entry (clock-skew safe)", function () {
+  var s = fresh(D(0)); s.dims.physical = 1000;
+  s.log = [{ ts: 1, day: E.dayIndex(D(0)) + 5, dim: "physical", name: "future rep", baseXp: 1000, xp: 1000 }];
+  var tr = E.ratingTrend(s, 14, D(0));
+  eq(tr[tr.length - 1].rating, E.powerRating(s, D(0)), "endpoint matches live powerRating despite a future-dated entry");
+});
+
+test("dailyBrief tolerates a partial / empty / null state (never throws)", function () {
+  [null, undefined, {}, { dims: null, history: null, log: null }].forEach(function (st) {
+    var b = E.dailyBrief(st, D(0));
+    assert(b && typeof b.powerLevel === "number" && b.dimsHit.length + b.dimsQuiet.length === 6, "sane brief for a partial state");
+  });
+});
+
+test("mergeStates log + dedup-set are order-independent for same-ts feed batches (byte-convergence)", function () {
+  var base = E.newState("L", D(0));
+  var a = E.ingestExternal(base, [{ source: "calendar", kind: "calendar", id: "e1", title: "Gym" }, { source: "calendar", kind: "calendar", id: "e2", title: "Therapy session" }, { source: "calendar", kind: "calendar", id: "e3", title: "Call mom" }], D(0)).state;
+  var b = E.ingestExternal(base, [{ source: "calendar", kind: "calendar", id: "e4", title: "Lunch with Sam" }, { source: "calendar", kind: "calendar", id: "e5", title: "Self-tape audition" }], D(0)).state;
+  var m1 = E.mergeStates(a, b, D(0)), m2 = E.mergeStates(b, a, D(0));
+  eq(JSON.stringify(m1.log), JSON.stringify(m2.log), "log order identical regardless of merge order");
+  eq(JSON.stringify(Object.keys(m1.external.seen)), JSON.stringify(Object.keys(m2.external.seen)), "dedup-set key order identical");
+});
+
 // ---------------------------------------------------------------- report
 console.log("\n  Protagonist engine — stress battery");
 console.log("  " + pass + " passed, " + fail + " failed\n");
