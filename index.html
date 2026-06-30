@@ -353,6 +353,45 @@
   .satisfoot .spark i{width:6px;border-radius:2px;background:var(--cyan-dim);display:inline-block;min-height:2px;}
   .satisfoot .fwarn{color:#caa84a;}
 
+  /* 🜂 The Path — Celestine: energy + synchronicity + control-drama */
+  .path{background:radial-gradient(120% 90% at 50% -20%, rgba(167,139,250,0.10), transparent 65%), var(--panel);}
+  .energywrap{position:relative;height:34px;border-radius:10px;overflow:hidden;background:rgba(4,10,22,0.9);border:1px solid rgba(167,139,250,0.28);box-shadow:inset 0 0 16px rgba(0,0,0,0.5);}
+  .energyfill{position:absolute;left:0;top:0;bottom:0;width:50%;border-radius:10px 0 0 10px;background:linear-gradient(180deg,#c4b5fd 0%,#a78bfa 50%,#7c5cf0 100%);box-shadow:0 0 18px rgba(167,139,250,0.5);transition:width .6s cubic-bezier(.2,.85,.25,1);}
+  .energytxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-family:var(--mono);font-size:12.5px;font-weight:700;color:#f1ecff;text-shadow:0 1px 4px rgba(0,8,20,0.85);pointer-events:none;}
+  .energytxt .epct{color:#e3dbff;}
+  .pathcue{font-family:var(--mono);font-size:10.5px;color:var(--faint2);margin-top:8px;line-height:1.5;}
+  .pathsub{font-family:var(--mono);font-size:11px;letter-spacing:0.04em;color:var(--txt);margin:15px 0 8px;}
+  .pathhint{color:var(--faint2);font-weight:400;}
+  .synclist{margin-top:9px;display:flex;flex-direction:column;gap:5px;}
+  .syncitem{font-size:12px;color:var(--muted);display:flex;gap:7px;align-items:baseline;}
+  .syncitem .sdot{color:#a78bfa;}
+  .syncitem .sd{color:var(--faint2);font-family:var(--mono);font-size:10px;margin-left:auto;white-space:nowrap;}
+  .dramawrap{display:flex;flex-direction:column;gap:8px;}
+  .dramarow2{display:flex;align-items:center;gap:7px;}
+  .dramarow2 .dname{font-size:12.5px;font-weight:600;width:88px;flex:0 0 auto;}
+  .dbtn{flex:1;font-family:var(--mono);font-size:10.5px;padding:8px 4px;border:1px solid var(--line);border-radius:8px;background:rgba(46,125,255,0.06);color:var(--muted);cursor:pointer;text-align:center;min-height:40px;}
+  .dbtn.tr{border-color:rgba(63,224,160,0.4);color:#7dffc4;}
+  .dbtn.tr:active{background:rgba(63,224,160,0.18);}
+  .dbtn.ca{border-color:rgba(95,224,255,0.35);color:var(--cyan);}
+  .dbtn.ca:active{background:rgba(95,224,255,0.16);}
+  .dbtn.ran:active{background:rgba(255,84,105,0.14);}
+  .dramafoot{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:9px;line-height:1.5;}
+
+  /* ✦ The 9 Insights -> destiny */
+  .destiny{border:1px dashed rgba(255,215,106,0.4);border-radius:10px;padding:11px 12px;margin-bottom:12px;cursor:pointer;}
+  .destiny .dlab{font-family:var(--mono);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);}
+  .destiny .dtext{font-size:14px;color:var(--txt);margin-top:5px;line-height:1.4;}
+  .destiny .dtext.empty{color:var(--faint2);font-style:italic;}
+  .insightlist{display:flex;flex-direction:column;}
+  .ins{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid rgba(95,224,255,0.07);font-size:13px;opacity:0.5;}
+  .ins:last-child{border-bottom:0;}
+  .ins.on{opacity:1;}
+  .ins .inum{font-family:var(--mono);font-size:11px;color:var(--faint2);width:20px;}
+  .ins.on .inum{color:#a78bfa;}
+  .ins .inm{flex:1;}
+  .ins .ihint{font-family:var(--mono);font-size:10px;color:var(--faint2);}
+  .ins .ick{color:#a78bfa;}
+
   /* achievements */
   .achgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;}
   .ach{position:relative;border:1px solid rgba(95,224,255,0.14);border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:4px;padding:11px 5px 14px;text-align:center;background:rgba(4,8,16,0.5);opacity:0.5;transition:opacity .2s, transform .12s;min-height:84px;cursor:pointer;}
@@ -518,6 +557,27 @@
     <div class="satisfoot" id="satisFoot"></div>
   </div>
 
+  <!-- ===== Celestine Prophecy: Energy · Synchronicity · Control-drama awareness ===== -->
+  <div class="panel path" id="pathPanel">
+    <div class="ph"><span class="t">🜂 The Path</span><span class="meta" id="energyMeta">energy</span></div>
+    <div class="energywrap">
+      <div class="energyfill" id="energyFill"></div>
+      <div class="energytxt"><span id="energyTxt">⚡ Energy</span><span class="epct" id="energyPct">50%</span></div>
+    </div>
+    <div class="pathcue" id="pathCue">Build energy by connecting; it leaks when you run a control drama.</div>
+
+    <div class="pathsub">✨ Synchronicity <span class="pathhint">coincidences are the universe pointing the way</span></div>
+    <div class="smartrow">
+      <input id="syncInput" type="text" autocomplete="off" autocapitalize="sentences" placeholder="a meaningful coincidence today…" />
+      <button id="syncGo" aria-label="log synchronicity">▸</button>
+    </div>
+    <div class="synclist" id="syncList"></div>
+
+    <div class="pathsub">👁️ Control-drama check-in <span class="pathhint">your two — catch them, transcend them</span></div>
+    <div class="dramawrap" id="dramaRow"></div>
+    <div class="dramafoot" id="dramaFoot"></div>
+  </div>
+
   <!-- ===== DASHBOARD: the reward shelf you scroll into after acting ===== -->
   <div class="panel hydro" id="hydroPanel">
     <div class="ph"><span class="t">💧 Hydration</span><span class="meta" id="hydroMeta">0 / 125 oz</span></div>
@@ -581,6 +641,13 @@
   <div class="panel" id="pulsePanel">
     <div class="ph"><span class="t">📊 Weekly Pulse</span><span class="meta">last 7 days</span></div>
     <div class="pulsegrid" id="pulseGrid"></div>
+  </div>
+
+  <!-- The 9 Insights -> your Birth Vision (destiny) -->
+  <div class="panel" id="insightPanel">
+    <div class="ph"><span class="t">✦ The 9 Insights</span><span class="meta" id="insightMeta">0 / 9 awakened</span></div>
+    <div class="destiny" id="destinyBox"></div>
+    <div class="insightlist" id="insightList"></div>
   </div>
 
   <div class="panel" id="achPanel">
@@ -801,6 +868,13 @@
     PENALTY_CLEARED: function(){ return { t:"[ PENALTY CLEARED ]", lines:["Daily Quest complete. Your power returns."] }; },
     RECURRING_DONE: function(e){ return { t:"[ UPKEEP COMPLETE ]", lines:[e.name+" done. Logged to the System."] }; },
     HYDRATION_GOAL: function(e){ return { t:"[ HYDRATION COMPLETE ]", lines:[e.goalOz+"oz down — your body is fueled.","A Physical rep is logged. Streak kept alive."], gold:true }; },
+    PAYOUT: function(e){ return { t:"[ CASH LANDED ]", lines:["$"+Math.round(e.amount||0).toLocaleString()+" "+(e.channel||"payout")+" — real money in the bank.","Your Power Level rises."], gold:true }; },
+    SYNCHRONICITY: function(){ return { t:"[ SYNCHRONICITY ]", lines:["The universe just pointed. Follow the thread."] }; },
+    DRAMA: function(e){ return e.outcome==="transcended"
+      ? { t:"[ DRAMA TRANSCENDED ]", lines:["You gave energy instead of taking it.","+energy. This is how the "+(e.drama==="interrogator"?"Interrogator":"Aloof")+" is cleared."], gold:true }
+      : (e.outcome==="caught"
+        ? { t:"[ AWARENESS ]", lines:["You caught yourself mid-drama. That's the turning point."] }
+        : { t:"[ NOTED ]", lines:["Energy leaked — but you saw it. That's data, not failure."] }); },
   };
   function enqueue(events){ (events||[]).forEach(function(e){ if(NOTE[e.type]) queue.push(NOTE[e.type](e)); }); pump(); }
   var noteTimer = null, dismissing = false;
@@ -855,10 +929,16 @@
     $("incLvl").textContent = "Lv " + il.level;
     $("incSub").textContent = st.incomeXp + " power · " + (il.need - il.intoLevel) + " to next level";
     $("incBar").style.width = il.pct + "%";
-    var sales7 = G.recentSalesTotal(st, 7, now());
-    $("growthLine").innerHTML = sales7 > 0
-      ? '🌱 <b>$' + sales7.toLocaleString() + '</b> in Vybrance sales (7d) is feeding your growth'
-      : '🌱 Vybrance reps are seeds — your level grows as last-7-day sales come in';
+    var rev7 = G.recentRevenue(st, 7, now()), payouts7 = G.recentPayoutsTotal(st, 7, now());
+    var byCh = G.payoutsByChannel(st, 30, now());
+    if(payouts7 > 0){
+      var chTxt = byCh.slice(0,4).map(function(c){ return cap(c.channel) + ' $' + c.total.toLocaleString(); }).join(' · ');
+      $("growthLine").innerHTML = '💰 <b>$' + payouts7.toLocaleString() + '</b> landed (7d payouts)' + (chTxt ? '<br><span style="color:var(--faint2)">' + esc(chTxt) + '</span>' : '');
+    } else if(rev7 > 0){
+      $("growthLine").innerHTML = '🌱 <b>$' + rev7.toLocaleString() + '</b> in sales (7d) feeding your growth · <span style="color:var(--faint2)">payout feed not live yet</span>';
+    } else {
+      $("growthLine").innerHTML = '🌱 Your level grows as real channel payouts land (Amazon, Target, Shopify…)';
+    }
 
     var m = G.multiplier(st, td), pen = G.isPenalized(st), eng = G.engineDimsActive(st, td);
     $("mult").textContent = "×" + m.toFixed(2);
@@ -964,6 +1044,8 @@
     renderRecovery();
     renderSacral();
     renderSatisfaction();
+    renderPath();
+    renderInsights();
   }
 
   // ---- rating trend sparkline ----
@@ -1092,6 +1174,70 @@
     foot += ' <span style="color:var(--faint2)">7d</span>'+spark;
     if(G.frustrationSignal(st, now()).warn) foot += '<div class="fwarn" style="margin-top:7px">A few flat days in a row — that\'s data, not failure. What would feel satisfying to respond to next?</div>';
     $("satisFoot").innerHTML = foot;
+  }
+
+  // ---- 🜂 The Path — Celestine: energy + synchronicity + control-drama ----
+  var DRAMAS = [ {id:"interrogator", label:"Interrogator"}, {id:"aloof", label:"Aloof"} ];
+  function pathDing(){ // a calm, "insight" chime (distinct from the level-up ding)
+    try{ audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume();
+      var o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type="sine"; o.frequency.value=587.33; // D5
+      g.gain.setValueAtTime(0.0001,audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.05,audioCtx.currentTime+0.03); g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.5);
+      o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.52);
+    }catch(e){}
+  }
+  function renderPath(){
+    var td = today();
+    var en = G.energyLevel(st, now());
+    $("energyFill").style.width = en + "%";
+    $("energyPct").textContent = en + "%";
+    $("energyMeta").textContent = en >= 75 ? "primed" : (en >= 45 ? "steady" : "depleted");
+    $("energyTxt").textContent = en >= 75 ? "⚡ Energy — primed" : (en >= 45 ? "⚡ Energy" : "⚡ Energy — refill");
+    $("pathCue").innerHTML = en >= 75
+      ? 'High energy sharpens intuition — <b>act on a synchronicity</b> today.'
+      : 'Build energy by connecting (people, nature, presence); it leaks when you run a control drama.';
+    // recent synchronicities
+    var syncs = (st.synchronicities||[]).slice(-3).reverse();
+    $("syncList").innerHTML = syncs.length
+      ? syncs.map(function(x){ var ago = td - (x.day||td); var when = ago<=0?"today":(ago===1?"1d":ago+"d"); return '<div class="syncitem"><span class="sdot">✦</span><span>'+esc(x.note||"(synchronicity)")+'</span><span class="sd">'+when+'</span></div>'; }).join("")
+      : '<div class="syncitem" style="color:var(--faint2)">No synchronicities logged yet — start noticing the coincidences.</div>';
+    // control-drama buttons (your two; outcomes transcended / caught / ran)
+    $("dramaRow").innerHTML = DRAMAS.map(function(d){
+      return '<div class="dramarow2"><span class="dname">'+d.label+'</span>'
+        + '<button class="dbtn tr" data-drama="'+d.id+'" data-out="transcended">🕊 transcended</button>'
+        + '<button class="dbtn ca" data-drama="'+d.id+'" data-out="caught">👁 caught</button>'
+        + '<button class="dbtn ran" data-drama="'+d.id+'" data-out="ran">✕ ran it</button></div>';
+    }).join("");
+    Array.prototype.forEach.call($("dramaRow").querySelectorAll("[data-drama]"), function(b){
+      b.onclick = function(){ pathDing(); apply(function(){ return G.logDrama(st, b.getAttribute("data-drama"), b.getAttribute("data-out"), now()); }); };
+    });
+    // today's drama tally
+    var todayDramas = (st.dramas||[]).filter(function(x){ return (x.day||0) === td; });
+    var tr2 = todayDramas.filter(function(x){return x.outcome==="transcended";}).length;
+    var ca = todayDramas.filter(function(x){return x.outcome==="caught";}).length;
+    var rn = todayDramas.filter(function(x){return x.outcome==="ran";}).length;
+    $("dramaFoot").innerHTML = todayDramas.length
+      ? ('Today — transcended <b style="color:#7dffc4">'+tr2+'</b> · caught <b style="color:var(--cyan)">'+ca+'</b> · ran <b style="color:#ff8a9a">'+rn+'</b>. Awareness is the win.')
+      : 'Catch yourself probing (Interrogator) or withdrawing (Aloof) — naming it earns energy.';
+  }
+
+  // ---- ✦ The 9 Insights -> Birth Vision (destiny) ----
+  var INSIGHT_BLURB = {
+    1:"Notice the coincidences.", 2:"Take the long view.", 3:"Everything is energy.", 4:"We compete for energy (control dramas).",
+    5:"Connect to a limitless source.", 6:"Release your childhood drama.", 7:"Follow the flow of synchronicity.",
+    8:"Uplift others; give energy.", 9:"Live your Birth Vision."
+  };
+  function renderInsights(){
+    var ins = G.insights(st, now());
+    $("insightMeta").textContent = ins.awakened + " / " + ins.total + " awakened";
+    var dt = ins.destiny || "";
+    $("destinyBox").innerHTML = '<div class="dlab">★ Your Birth Vision</div><div class="dtext'+(dt?'':' empty')+'">'+(dt?esc(dt):"Tap to name your destiny — the north-star this all points toward.")+'</div>';
+    $("destinyBox").onclick = function(){
+      var v = prompt("Your Birth Vision — the destiny everything points toward:", dt);
+      if(v!==null) apply(function(){ return { state: G.setDestiny(st, v), events: [] }; });
+    };
+    $("insightList").innerHTML = ins.insights.map(function(i){
+      return '<div class="ins'+(i.unlocked?' on':'')+'"><span class="inum">'+(i.unlocked?'<span class="ick">●</span>':i.n)+'</span><span class="inm">'+esc(i.name)+(i.unlocked?' <span style="color:var(--faint2);font-weight:400">— '+esc(INSIGHT_BLURB[i.n]||"")+'</span>':'')+'</span><span class="ihint">'+(i.unlocked?'✓':esc(i.hint))+'</span></div>';
+    }).join("");
   }
 
   // ---- ⚡ Power Level — the culmination number ----
@@ -1387,6 +1533,16 @@
   $("actInput").addEventListener("input", previewActivity);
   $("actGo").onclick = logActivity;
   $("actInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); logActivity(); } });
+
+  // synchronicity capture
+  function logSyncFromInput(){
+    var t = $("syncInput").value.trim(); if(!t) return;
+    pathDing();
+    apply(function(){ return G.logSynchronicity(st, t, now()); });
+    $("syncInput").value = "";
+  }
+  $("syncGo").onclick = logSyncFromInput;
+  $("syncInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); logSyncFromInput(); } });
 
   $("getRep").onclick = openSheet;
   $("scrim").onclick = closeSheet;

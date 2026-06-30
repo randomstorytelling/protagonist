@@ -1317,6 +1317,40 @@ test("legacy big:true sales do NOT re-inflate the rebased Big Wins count on merg
   eq(E.mergeStates(s, E.newState("L", D(0)), D(0)).bigWins, 1, "merge with an empty device stays honest (no re-inflation)");
 });
 
+// Exact repro of the CRDT-merge re-inflation bug: logAgg's big-win count MUST match migrateV2toV3's discriminator
+// (e.big && e.amount == null). Before the fix, migrateV2toV3 rebased bigWins correctly but the first mergeStates
+// re-counted the stale big:true sales via logAgg, re-inflating the trophy count (and violating idempotency).
+test("v2->v3 migrate-then-merge: migrated self-merge is a no-op AND two v2 devices converge on the honest real-win count", function () {
+  var day = E.dayIndex(D(0));
+  // (1) one v2 device: 2 legacy big:true SALES (amount set) + 1 REAL milestone win (amount null)
+  var v2 = E.newState("L", D(0)); v2.version = 2;
+  v2.bigWins = 9;   // stale inflated count; migration must rebase it
+  v2.log = [
+    { ts: 1, day: day, dim: "financial", name: "Amazon sale $300", big: true, amount: 300 },     // sale: NOT a win
+    { ts: 2, day: day, dim: "financial", name: "Shopify sale $250", big: true, amount: 250 },     // sale: NOT a win
+    { ts: 3, day: day, dim: "financial", name: "Booked a national spot", big: true, amount: null } // REAL win
+  ];
+  var migrated = E.migrateV2toV3(v2, D(0));
+  eq(migrated.bigWins, 1, "migration rebases to the 1 real milestone (2 sales excluded)");
+  // self-merge of a migrated state MUST be a no-op — not re-inflated to 3 by re-counting the big:true sales
+  eq(E.mergeStates(migrated, migrated, D(0)).bigWins, 1, "migrated self-merge stays at the rebased count (idempotent, pre-fix returned 3)");
+
+  // (2) two DISTINCT v2 devices, each a legacy big:true sale + its own real win, merged RAW (mergeStates migrates each first)
+  var devA = E.newState("L", D(0)); devA.version = 2; devA.bigWins = 5;
+  devA.log = [
+    { ts: 10, day: day, dim: "financial", name: "A: Amazon sale $300", big: true, amount: 300 },       // sale
+    { ts: 11, day: day, dim: "financial", name: "A: Closed a wholesale deal", big: true, amount: null } // REAL win #1
+  ];
+  var devB = E.newState("L", D(0)); devB.version = 2; devB.bigWins = 8;
+  devB.log = [
+    { ts: 20, day: day, dim: "financial", name: "B: Shopify sale $250", big: true, amount: 250 },   // sale
+    { ts: 21, day: day, dim: "financial", name: "B: Booked a commercial", big: true, amount: null }  // REAL win #2
+  ];
+  // the union has 2 distinct real wins; sales must NOT count — honest count is 2 (pre-fix re-inflated to 4)
+  eq(E.mergeStates(devA, devB, D(0)).bigWins, 2, "two v2 devices converge on the 2 honest real wins (sales excluded)");
+  eq(E.mergeStates(devB, devA, D(0)).bigWins, 2, "merge is order-independent (same honest count)");
+});
+
 test("ratingTrend window is clamped (a huge `days` can't OOM); powerGain stays finite", function () {
   var s = fresh(D(0));
   var tr = E.ratingTrend(s, 1e9, D(0));
@@ -1345,6 +1379,65 @@ test("mergeStates log + dedup-set are order-independent for same-ts feed batches
   var m1 = E.mergeStates(a, b, D(0)), m2 = E.mergeStates(b, a, D(0));
   eq(JSON.stringify(m1.log), JSON.stringify(m2.log), "log order identical regardless of merge order");
   eq(JSON.stringify(Object.keys(m1.external.seen)), JSON.stringify(Object.keys(m2.external.seen)), "dedup-set key order identical");
+});
+
+// ---------------------------------------------------------------- payouts (revenue = real cash landed)
+test("payouts: real cash -> payoutsByDay (not sales), drives revenue, deduped by txn id, per-channel, never a Big Win", function () {
+  var s = E.ingestExternal(fresh(D(0)), [
+    { source: "mercury", kind: "payout", id: "tx1", channel: "amazon", amount: 4200 },
+    { source: "mercury", kind: "payout", id: "tx2", channel: "target", amount: 1800 },
+  ], D(0)).state;
+  var day = String(E.dayIndex(D(0)));
+  eq(s.payoutsByDay[day], 6000, "payouts recorded in payoutsByDay");
+  eq(Object.keys(s.salesByDay).length, 0, "payouts do NOT pollute salesByDay");
+  eq(s.bigWins, 0, "a payout is income, not a Big Win");
+  assert(s.incomeXp > 0 && s.dims.financial > 0, "payout credits Earning Power + Financial dim");
+  eq(E.recentPayoutsTotal(s, 7, D(0)), 6000, "recentPayoutsTotal sums the window");
+  eq(E.recentRevenue(s, 30, D(0)), 6000, "Power Level revenue = payouts");
+  var byCh = E.payoutsByChannel(s, 30, D(0));
+  eq(byCh[0].channel, "amazon", "top channel by $"); eq(byCh[0].total, 4200, "amazon total right");
+  var s2 = E.ingestExternal(s, [{ source: "mercury", kind: "payout", id: "tx1", channel: "amazon", amount: 4200 }], D(0)).state;
+  eq(s2.payoutsByDay[day], 6000, "re-ingesting the same Mercury txn id is a no-op (deduped)");
+});
+
+test("revenue uses payouts; falls back to sales only until payouts exist (no double-count)", function () {
+  var sales = E.ingestExternal(fresh(D(0)), [{ source: "shopify", kind: "sale", id: "s1", amount: 5000 }], D(0)).state;
+  eq(E.recentRevenue(sales, 30, D(0)), 5000, "sales fallback when no payouts yet");
+  var both = E.ingestExternal(sales, [{ source: "mercury", kind: "payout", id: "p1", channel: "amazon", amount: 9000 }], D(0)).state;
+  eq(E.recentRevenue(both, 30, D(0)), 9000, "payouts take over once they exist (not sales+payouts)");
+});
+
+// ---------------------------------------------------------------- Celestine Prophecy layer
+test("Celestine: synchronicity + drama check-ins credit growth and build/leak Energy", function () {
+  var s = E.logSynchronicity(fresh(D(0)), "ran into the buyer", D(0)).state;
+  eq(s.synchronicities.length, 1, "synchronicity recorded");
+  assert(s.dims.spiritual > 0, "synchronicity credits spiritual XP");
+  var base = E.energyLevel(s, D(0));
+  var t = E.logDrama(s, "interrogator", "transcended", D(0));
+  assert(E.energyLevel(t.state, D(0)) > base, "transcending a drama raises Energy");
+  assert(t.state.dims.spiritual > s.dims.spiritual, "transcending credits XP");
+  var ran = E.logDrama(s, "aloof", "ran", D(0));
+  assert(E.energyLevel(ran.state, D(0)) < base, "running a drama leaks Energy");
+  eq(ran.state.dims.spiritual, s.dims.spiritual, "running a drama earns no XP (no shame, but no reward)");
+  assert(E.logDrama(s, "bogus", "ran", D(0)).events.some(function (e) { return e.type === "ERROR"; }), "bad drama type rejected");
+  var e = E.energyLevel(fresh(D(0)), D(0)); assert(e >= 0 && e <= 100, "Energy bounded 0..100");
+});
+
+test("Celestine: 9 Insights ratchet toward destiny; merge unions synchronicities/dramas/destiny (order-independent)", function () {
+  var s = fresh(D(0));
+  eq(E.insights(s, D(0)).total, 9, "9 insights");
+  eq(E.insights(s, D(0)).awakened, 0, "none awakened fresh");
+  s = E.logSynchronicity(s, "x", D(0)).state;
+  assert(E.insights(s, D(0)).insights[0].unlocked, "Insight 1 awakens on the first synchronicity");
+  s = E.setDestiny(s, "Lead by example");
+  eq(E.insights(s, D(0)).destiny, "Lead by example", "Birth Vision stored");
+  var a = E.logSynchronicity(fresh(D(0)), "a", D(0)).state;
+  var b = E.logDrama(fresh(D(0)), "aloof", "transcended", D(0)).state;
+  var m1 = E.mergeStates(a, b, D(0)), m2 = E.mergeStates(b, a, D(0));
+  eq(m1.synchronicities.length, 1, "synchronicity survives merge");
+  eq(m1.dramas.length, 1, "drama survives merge");
+  eq(JSON.stringify(m1.synchronicities), JSON.stringify(m2.synchronicities), "synchronicity merge order-independent");
+  eq(JSON.stringify(m1.dramas), JSON.stringify(m2.dramas), "drama merge order-independent");
 });
 
 // ---------------------------------------------------------------- report

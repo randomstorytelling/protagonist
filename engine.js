@@ -309,10 +309,15 @@
       // WHOOP-derived: 25-day avg day-strain ~10 with frequent 15+ days (basketball, lifting, hikes) => "active".
       profile: { heightIn: 77, weightLb: 208, activityTier: "active" },
       salesByDay: {},             // dayIndex -> total Vybrance sales $ that day (durable; survives log eviction)
+      payoutsByDay: {},           // dayIndex -> total CASH-LANDED payouts $ that day (Amazon/Target/Shopify/... via Mercury); the real revenue signal
       // Generator signature: a once-a-day subjective gut-read of how the day FELT (1 Drained .. 4 Satisfied).
       // Objective output is XP; this is the feeling that tells a Generator the day was correct. Never penalizes.
       satisfaction: { byDay: {} }, // dayIndex -> level 1..4
       powerPeak: 0,               // highest Power Level ever reached — a high-water mark that only rises (a record to chase)
+      // ===== Celestine Prophecy layer — energy, synchronicity, control-drama awareness, the path to destiny =====
+      synchronicities: [],        // [{ts, day, note}] meaningful coincidences logged (the universe pointing toward destiny)
+      dramas: [],                 // [{ts, day, type:"interrogator"|"aloof", outcome:"ran"|"caught"|"transcended"}] control-drama check-ins
+      destiny: "",                // the Birth Vision / north-star the whole app orients toward (energy is DERIVED, not stored)
     };
   }
 
@@ -421,8 +426,20 @@
       }
     }
     var logByDay = {};
-    (out.log || []).forEach(function (e) { if (e && e.dim === "financial" && e.amount != null) { var d = num(e.day, null); if (d === null || d > today + 1 || d < today - 400) return; var k = String(Math.floor(d)); logByDay[k] = (logByDay[k] || 0) + nonNeg(e.amount); } });
+    (out.log || []).forEach(function (e) { if (e && e.dim === "financial" && e.amount != null && e.repId !== "payout") { var d = num(e.day, null); if (d === null || d > today + 1 || d < today - 400) return; var k = String(Math.floor(d)); logByDay[k] = (logByDay[k] || 0) + nonNeg(e.amount); } });
     for (var lbk in logByDay) out.salesByDay[lbk] = Math.max(nonNeg(out.salesByDay[lbk]), Math.round(logByDay[lbk] * 100) / 100);
+    // durable per-day PAYOUTS $ (real cash landed via Mercury) — the headline revenue signal; same repair+backfill
+    // pattern as salesByDay but sourced from payout log entries (repId "payout"), so the two never cross-contaminate.
+    out.payoutsByDay = {};
+    if (s.payoutsByDay && typeof s.payoutsByDay === "object") {
+      for (var pdk in s.payoutsByDay) if (Object.prototype.hasOwnProperty.call(s.payoutsByDay, pdk)) {
+        var pdd = Number(pdk), pdv = nonNeg(s.payoutsByDay[pdk]);
+        if (Number.isFinite(pdd) && pdd <= today + 1 && pdd >= today - 400 && pdv > 0) out.payoutsByDay[String(Math.floor(pdd))] = pdv;
+      }
+    }
+    var poByDay = {};
+    (out.log || []).forEach(function (e) { if (e && e.repId === "payout" && e.amount != null) { var d = num(e.day, null); if (d === null || d > today + 1 || d < today - 400) return; var k = String(Math.floor(d)); poByDay[k] = (poByDay[k] || 0) + nonNeg(e.amount); } });
+    for (var pbk in poByDay) out.payoutsByDay[pbk] = Math.max(nonNeg(out.payoutsByDay[pbk]), Math.round(poByDay[pbk] * 100) / 100);
     // satisfaction check-ins: finite day keys (no future), level clamped to 1..4, bounded to recent days
     out.satisfaction = { byDay: {} };
     if (s.satisfaction && typeof s.satisfaction === "object" && s.satisfaction.byDay && typeof s.satisfaction.byDay === "object") {
@@ -432,6 +449,30 @@
       }
     }
     out.powerPeak = clamp(nonNeg(s.powerPeak), 0, CONFIG.powerLevel.scale);   // durable high-water mark (finite, bounded to scale)
+    // ----- Celestine layer -----
+    out.synchronicities = [];
+    if (Array.isArray(s.synchronicities)) {
+      s.synchronicities.forEach(function (x) {
+        if (!x || typeof x !== "object") return;
+        var d = num(x.day, null), ts = num(x.ts, null);
+        if (d === null || d > today + 1) return;
+        out.synchronicities.push({ ts: ts, day: Math.floor(d), note: String(x.note || "").slice(0, 280) });
+      });
+      if (out.synchronicities.length > 200) out.synchronicities = out.synchronicities.slice(out.synchronicities.length - 200);
+    }
+    out.dramas = [];
+    if (Array.isArray(s.dramas)) {
+      s.dramas.forEach(function (x) {
+        if (!x || typeof x !== "object") return;
+        var d = num(x.day, null);
+        if (d === null || d > today + 1) return;
+        if (["interrogator", "aloof"].indexOf(x.type) === -1) return;
+        if (["ran", "caught", "transcended"].indexOf(x.outcome) === -1) return;
+        out.dramas.push({ ts: num(x.ts, null), day: Math.floor(d), type: x.type, outcome: x.outcome });
+      });
+      if (out.dramas.length > 400) out.dramas = out.dramas.slice(out.dramas.length - 400);
+    }
+    out.destiny = (typeof s.destiny === "string") ? s.destiny.slice(0, 280) : "";
     out.version = SCHEMA_VERSION;
     recomputeStreak(out, today); // streak is always derived, never trusted from disk
     return out;
@@ -720,6 +761,16 @@
       if (v > 0) out.salesByDay[String(Math.floor(d))] = v;
     });
 
+    // durable per-day PAYOUTS $: same per-day MAX grow-only CRDT (the real revenue signal)
+    out.payoutsByDay = {};
+    var pbdKeys = {};
+    [A.payoutsByDay, B.payoutsByDay].forEach(function (mm) { for (var k in (mm || {})) if (Object.prototype.hasOwnProperty.call(mm, k)) pbdKeys[k] = 1; });
+    Object.keys(pbdKeys).forEach(function (dk) {
+      var d = Number(dk); if (!Number.isFinite(d) || d > sbdToday + 1 || d < sbdToday - 400) return;
+      var v = Math.max(nonNeg(A.payoutsByDay && A.payoutsByDay[dk]), nonNeg(B.payoutsByDay && B.payoutsByDay[dk]));
+      if (v > 0) out.payoutsByDay[String(Math.floor(d))] = v;
+    });
+
     // satisfaction check-ins: union per day; on a same-day conflict take the MAX level (deterministic and
     // order-independent — you rarely re-rate the same day on two devices). Bounded to the recent window.
     out.satisfaction = { byDay: {} };
@@ -732,6 +783,19 @@
       var v = Math.round(Math.max(av, bv));
       if (v >= 1 && v <= 4) out.satisfaction.byDay[String(Math.floor(d))] = v;
     });
+
+    // Celestine: synchronicities + control-drama check-ins -> union (dedup by ts-key), sorted (byte-convergent), bounded.
+    function uniqSort(arr, keyOf, cap) {
+      var seen = {}, u = [];
+      (arr || []).forEach(function (e) { if (!e) return; var k = keyOf(e); if (!seen[k]) { seen[k] = 1; u.push(e); } });
+      u.sort(function (x, y) { return num(x.ts, 0) - num(y.ts, 0) || keyOf(x).localeCompare(keyOf(y)); });
+      return u.length > cap ? u.slice(u.length - cap) : u;
+    }
+    out.synchronicities = uniqSort((A.synchronicities || []).concat(B.synchronicities || []), function (e) { return num(e.ts, 0) + "|" + (e.note || ""); }, 200);
+    out.dramas = uniqSort((A.dramas || []).concat(B.dramas || []), function (e) { return num(e.ts, 0) + "|" + e.type + "|" + e.outcome; }, 400);
+    // destiny (Birth Vision): prefer the non-empty one; deterministic tie-break (longer, then lexicographically first)
+    var dA = (typeof A.destiny === "string") ? A.destiny : "", dB = (typeof B.destiny === "string") ? B.destiny : "";
+    out.destiny = (dA && dB) ? (dA.length !== dB.length ? (dA.length > dB.length ? dA : dB) : (dA <= dB ? dA : dB)) : (dA || dB);
 
     // daily: same day -> completed if EITHER did; else the later day's record
     if (A.daily.day === B.daily.day) out.daily = { day: A.daily.day, completed: !!(A.daily.completed || B.daily.completed), rewardedDay: null };
@@ -807,11 +871,12 @@
     // extKey = the source's dedup identity (set by ingestExternal). It lets mergeStates collapse two
     // independent offline credits of the SAME external event (same id, different wall-clock ts) into ONE
     // log entry before aggregates are reconstructed — without it the ts-keyed union double-counts them.
-    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual", extKey: rep.extKey || null, amount: (rep.amount != null ? num(rep.amount, 0) : null) });
+    s.log.unshift({ ts: ts, day: today, dim: rep.dim, repId: rep.id || null, name: rep.name, baseXp: rep.xp, mult: mult, xp: rep.dim === "financial" ? gained : rep.xp, big: !!rep.big, source: rep.source || "manual", extKey: rep.extKey || null, amount: (rep.amount != null ? num(rep.amount, 0) : null), channel: rep.channel || null });
     if (s.log.length > LOG_CAP) s.log.length = LOG_CAP;
-    if (rep.dim === "financial" && rep.amount != null) {   // durable per-day sales $ (so the readout survives log eviction)
-      if (!s.salesByDay) s.salesByDay = {};
-      s.salesByDay[today] = Math.round(((s.salesByDay[today] || 0) + nonNeg(rep.amount)) * 100) / 100;
+    if (rep.dim === "financial" && rep.amount != null) {   // durable per-day $ — payouts (real cash) and sales kept in SEPARATE buckets
+      var bucket = (rep.id === "payout") ? "payoutsByDay" : "salesByDay";
+      if (!s[bucket]) s[bucket] = {};
+      s[bucket][today] = Math.round(((s[bucket][today] || 0) + nonNeg(rep.amount)) * 100) / 100;
     }
     s.lastActiveDay = today;
 
@@ -901,14 +966,35 @@
     var log = (state && state.log) || [];
     var logSum = 0;
     log.forEach(function (e) {
-      if (!e || e.dim !== "financial" || e.amount == null) return;
+      if (!e || e.dim !== "financial" || e.amount == null || e.repId === "payout") return;   // sales only (payouts are tracked separately)
       if (num(e.day, -1) >= since) logSum += nonNeg(e.amount);
     });
-    // durable backstop: sum the per-day record over the window. max(live log, durable) never under-reports —
-    // the log covers recent sales within the cap; salesByDay survives once entries age out.
     var sbd = (state && state.salesByDay) || {}, sbdSum = 0;
     for (var k in sbd) if (Object.prototype.hasOwnProperty.call(sbd, k)) { var d = num(k, -1); if (d >= since && d <= today) sbdSum += nonNeg(sbd[k]); }
     return Math.round(Math.max(logSum, sbdSum));
+  }
+  // total $ of real PAYOUTS (cash landed via Mercury) in the last `days` — the headline revenue signal. Same
+  // durable max(log, payoutsByDay) backstop as sales so it survives log eviction. Pure.
+  function recentPayoutsTotal(state, days, now) {
+    var today = effectiveDay(state, now);
+    var since = today - (Math.max(1, num(days, 7)) - 1);
+    var log = (state && state.log) || [], logSum = 0;
+    log.forEach(function (e) { if (e && e.repId === "payout" && e.amount != null && num(e.day, -1) >= since) logSum += nonNeg(e.amount); });
+    var pbd = (state && state.payoutsByDay) || {}, pbdSum = 0;
+    for (var k in pbd) if (Object.prototype.hasOwnProperty.call(pbd, k)) { var d = num(k, -1); if (d >= since && d <= today) pbdSum += nonNeg(pbd[k]); }
+    return Math.round(Math.max(logSum, pbdSum));
+  }
+  // recent payouts broken down by channel (from the log, within the cap window) -> [{channel, total}] desc. Pure.
+  function payoutsByChannel(state, days, now) {
+    var today = effectiveDay(state, now), since = today - (Math.max(1, num(days, 30)) - 1);
+    var log = (state && state.log) || [], by = {};
+    log.forEach(function (e) { if (e && e.repId === "payout" && e.amount != null && num(e.day, -1) >= since) { var c = e.channel || "other"; by[c] = (by[c] || 0) + nonNeg(e.amount); } });
+    return Object.keys(by).map(function (c) { return { channel: c, total: Math.round(by[c]) }; }).sort(function (a, b) { return b.total - a.total || a.channel.localeCompare(b.channel); });
+  }
+  // the revenue that drives the Power Level: real payouts, falling back to order-time sales until payouts flow.
+  function recentRevenue(state, days, now) {
+    var p = recentPayoutsTotal(state, days, now);
+    return p > 0 ? p : recentSalesTotal(state, days, now);
   }
 
   // ============================ POWER LEVEL — a LIVE readout of how you're operating NOW ============================
@@ -922,7 +1008,7 @@
   function powerRating(state, now) {
     if (!state || typeof state !== "object") return 0;
     var cfg = CONFIG.powerLevel, MAX = cfg.scale, w = cfg.weights;
-    var R = clamp(recentSalesTotal(state, 30, now) / cfg.peakMonthlyRevenue, 0, 1) * MAX;   // revenue run-rate
+    var R = clamp(recentRevenue(state, 30, now) / cfg.peakMonthlyRevenue, 0, 1) * MAX;   // revenue run-rate (real payouts; sales fallback)
     var lifeSum = 0; DIMENSIONS.forEach(function (d) { lifeSum += levelFromXp(nonNeg(state.dims && state.dims[d])).level; });
     var L = clamp(((lifeSum / DIMENSIONS.length) - 1) / (cfg.lifeLevelCap - 1), 0, 1) * MAX; // avg dim level above the Lv1 floor
     var streaks = 0; DIMENSIONS.forEach(function (d) { streaks += dimStreak(state, d, now); });
@@ -991,7 +1077,10 @@
       day: td,
       powerLevel: pr, tier: tier.name, nextTier: tier.next, nextAt: tier.nextAt, tierPct: tier.pct,
       weekChange: gain, peak: Math.max(peak, pr), atBest: pr > 0 && pr >= peak,
-      sales7d: recentSalesTotal(s, 7, now),
+      sales7d: recentRevenue(s, 7, now),                  // headline revenue = real payouts (sales fallback)
+      payoutsByChannel: payoutsByChannel(s, 7, now),      // [{channel,total}] for the brief breakdown
+      energy: energyLevel(s, now),
+      synchronicities7d: (s.synchronicities || []).filter(function (x) { return num(x.day, -1) >= td - 6; }).length,
       streak: (s.streak && s.streak.current) || 0,
       dailyDone: dp.done, dailyTotal: dp.total, dailyMet: dp.met,
       dimsHit: hit, dimsQuiet: quiet,
@@ -1109,7 +1198,8 @@
     var s = state || {};
     var today = effectiveDay(s, now), n = clamp(Math.round(num(days, 14)), 2, 400), since = today - (n - 1);  // cap the window (O(n*log)) so a huge `days` can't OOM
     var cfg = CONFIG.powerLevel, MAX = cfg.scale, w = cfg.weights;
-    var log = s.log || [], sbd = s.salesByDay || {};
+    var log = s.log || [];
+    var sbd = (recentPayoutsTotal(s, n, now) > 0) ? (s.payoutsByDay || {}) : (s.salesByDay || {});   // payouts-first, sales fallback (matches powerRating's R)
     // life reconstruction: floor (per-dim XP older than the log window) + logged baseXp up to each day, so the
     // trend reflects dimension-level gains over the window. The floor sums logged baseXp with the SAME day filter
     // (day <= today) the per-day loop uses, so a future-dated entry stays entirely in the floor — keeping the
@@ -1362,6 +1452,17 @@
         var srcLabel = src === "amazon" ? "Amazon" : (src === "shopify" ? "Shopify" : src);
         return { id: "sale", dim: "financial", amount: amt, name: "🌱 " + srcLabel + " sale" + (amt ? (" $" + amt) : ""), xp: clamp(round((amt || 20) / 2), 10, 200), source: src };
       }
+      case "payout": {
+        // REAL CASH LANDED — a channel payout deposited to Mercury (Amazon settlement, Target AP, Shopify payout, ...).
+        // This is the headline revenue signal (drives the Power Level): money in the bank, not orders or proxy activity.
+        // Credits Financial XP scaled to the $ (capped) + records the amount in payoutsByDay (via _credit's `channel`).
+        // Deduped by the Mercury transaction id. Never a Big Win (a deposit is income, not a milestone).
+        var pamt = num(a.amount, 0);
+        var pch = a.channel || a.source || "payout";
+        var PLBL = { amazon: "Amazon", target: "Target", shopify: "Shopify", tiktok: "TikTok Shop", walmart: "Walmart", faire: "Faire" };
+        var plabel = PLBL[pch] || (String(pch).charAt(0).toUpperCase() + String(pch).slice(1));
+        return { id: "payout", dim: "financial", amount: pamt, channel: pch, name: "💰 " + plabel + " payout" + (pamt ? (" $" + Math.round(pamt).toLocaleString()) : ""), xp: clamp(round(pamt / 10), 10, 300), source: a.source || "mercury" };
+      }
       case "task": {
         // a completed Google Task -> classify its title into the right dimension (call mom -> family,
         // send invoices -> financial, etc.); capped since a checkbox is a solid-but-small win.
@@ -1585,6 +1686,77 @@
     return queue;
   }
 
+  // ===================== Celestine Prophecy — energy, synchronicity, control-drama, the path to destiny =====================
+  // ENERGY is DERIVED (never stored), so it's CRDT-safe: a trailing-7-day reading that BUILDS from connection
+  // (synchronicities, transcending a control drama, spiritual/social reps) and LEAKS when you RUN a control drama.
+  var CELESTINE = { base: 50, window: 7, syncPts: 8, transcendPts: 10, caughtPts: 5, ranLeak: 8, connPts: 2 };
+  function energyLevel(state, now) {
+    var s = state || {};
+    var today = effectiveDay(s, now), since = today - (CELESTINE.window - 1), e = CELESTINE.base;
+    (s.synchronicities || []).forEach(function (x) { if (num(x.day, -1) >= since) e += CELESTINE.syncPts; });
+    (s.dramas || []).forEach(function (x) {
+      if (num(x.day, -1) < since) return;
+      if (x.outcome === "transcended") e += CELESTINE.transcendPts;
+      else if (x.outcome === "caught") e += CELESTINE.caughtPts;
+      else if (x.outcome === "ran") e -= CELESTINE.ranLeak;
+    });
+    (s.log || []).forEach(function (x) { if (x && (x.dim === "spiritual" || x.dim === "social") && num(x.day, -1) >= since) e += CELESTINE.connPts; });
+    return clamp(Math.round(e), 0, 100);
+  }
+  // log a meaningful coincidence -> durable record + a spiritual rep (paying attention to the flow). Bounded.
+  function logSynchronicity(state, note, now) {
+    var s = clone(state);
+    if (!Array.isArray(s.synchronicities)) s.synchronicities = [];
+    var ts = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
+    s.synchronicities.push({ ts: ts, day: effectiveDay(s, now), note: String(note || "").slice(0, 280) });
+    if (s.synchronicities.length > 200) s.synchronicities = s.synchronicities.slice(s.synchronicities.length - 200);
+    var r = _credit(s, { id: "synchronicity", dim: "spiritual", xp: 10, name: "✨ Synchronicity" + (note ? (": " + String(note).slice(0, 60)) : ""), source: "celestine" }, now);
+    r.events.push({ type: "SYNCHRONICITY" });
+    return r;
+  }
+  // log a control-drama check-in. type interrogator|aloof; outcome ran (leak) | caught (awareness) | transcended (gave energy).
+  // Awareness/transcendence is growth -> a spiritual rep; "ran" still records (no shame — it's data) but earns no XP.
+  function logDrama(state, type, outcome, now) {
+    if (["interrogator", "aloof"].indexOf(type) === -1) return { state: state, events: [{ type: "ERROR", message: "bad drama type" }] };
+    if (["ran", "caught", "transcended"].indexOf(outcome) === -1) return { state: state, events: [{ type: "ERROR", message: "bad outcome" }] };
+    var s = clone(state);
+    if (!Array.isArray(s.dramas)) s.dramas = [];
+    var ts = (now && typeof now.getTime === "function" && Number.isFinite(now.getTime())) ? now.getTime() : Date.now();
+    s.dramas.push({ ts: ts, day: effectiveDay(s, now), type: type, outcome: outcome });
+    if (s.dramas.length > 400) s.dramas = s.dramas.slice(s.dramas.length - 400);
+    var label = type === "interrogator" ? "Interrogator" : "Aloof";
+    var xp = outcome === "transcended" ? 15 : (outcome === "caught" ? 8 : 0);
+    var r = xp > 0
+      ? _credit(s, { id: "drama_" + outcome, dim: "spiritual", xp: xp, name: (outcome === "transcended" ? "🕊️ Transcended " : "👁️ Caught ") + label, source: "celestine" }, now)
+      : { state: s, events: [] };
+    r.events.push({ type: "DRAMA", drama: type, outcome: outcome });
+    return r;
+  }
+  function setDestiny(state, text) { var s = clone(state); s.destiny = String(text || "").slice(0, 280); return s; }
+  function transcendedCount(s) { var n = 0; (s && s.dramas || []).forEach(function (x) { if (x.outcome === "transcended") n++; }); return n; }
+  // The 9 Insights — a destiny path you climb. Each unlocks at a RATCHETING milestone (lifetime totals/levels, so
+  // an insight never un-awakens). Faithful to the book's arc: notice synchronicity -> see energy -> recognize the
+  // struggle -> connect to source -> clear your drama -> engage the flow -> uplift others -> live your Birth Vision.
+  function insights(state, now) {
+    var s = state || {};
+    function dlvl(d) { return levelFromXp(nonNeg(s.dims && s.dims[d])).level; }
+    var syncs = (s.synchronicities || []).length, dramasN = (s.dramas || []).length, transc = transcendedCount(s), lvl = playerLevel(s);
+    var defs = [
+      { n: 1, name: "A Critical Mass", req: syncs >= 1, hint: "Log your first synchronicity" },
+      { n: 2, name: "The Longer Now", req: activeDaysCount(s) >= 7, hint: "Show up on 7 days" },
+      { n: 3, name: "A Matter of Energy", req: syncs >= 5, hint: "Notice 5 synchronicities" },
+      { n: 4, name: "The Struggle for Power", req: dramasN >= 1, hint: "Name a control drama once" },
+      { n: 5, name: "The Message of the Mystics", req: dlvl("spiritual") >= 5, hint: "Reach Spiritual Lv 5" },
+      { n: 6, name: "Clearing the Past", req: transc >= 5, hint: "Transcend your drama 5×" },
+      { n: 7, name: "Engaging the Flow", req: syncs >= 15, hint: "Follow 15 synchronicities" },
+      { n: 8, name: "The Interpersonal Ethic", req: dlvl("social") >= 5 && transc >= 10, hint: "Social Lv 5 + transcend 10×" },
+      { n: 9, name: "The Emerging Culture", req: lvl >= 20 && transc >= 15, hint: "Reach Lv 20 living your destiny" },
+    ];
+    var awakened = 0;
+    var out = defs.map(function (d) { if (d.req) awakened++; return { n: d.n, name: d.name, unlocked: !!d.req, hint: d.hint }; });
+    return { insights: out, awakened: awakened, total: defs.length, destiny: (s.destiny || "") };
+  }
+
   // ---------------------------------------------------------------- public API
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
@@ -1609,6 +1781,14 @@
     recurringStatus: recurringStatus,
     dimStreak: dimStreak,
     recentSalesTotal: recentSalesTotal,
+    recentPayoutsTotal: recentPayoutsTotal,
+    recentRevenue: recentRevenue,
+    payoutsByChannel: payoutsByChannel,
+    energyLevel: energyLevel,
+    logSynchronicity: logSynchronicity,
+    logDrama: logDrama,
+    setDestiny: setDestiny,
+    insights: insights,
     powerRating: powerRating,
     powerTier: powerTier,
     powerGain: powerGain,

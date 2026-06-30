@@ -15,5 +15,7 @@ mkdir -p deploy
 cp index.html engine.js manifest.json service-worker.js icon.svg icon-180.png icon-192.png icon-512.png deploy/
 
 echo "== firebase deploy =="
-firebase deploy --only hosting --project protagonist-db3fd
+# protagonist-db3fd lives under the lawrence.a.whitaker@gmail.com Firebase account (NOT lawhitaker21@).
+# Pin it so a drifted active account can't fail the deploy with a "permission" error.
+firebase deploy --only hosting --project protagonist-db3fd --account lawrence.a.whitaker@gmail.com
 echo "== done: https://protagonist-db3fd.firebaseapp.com =="
