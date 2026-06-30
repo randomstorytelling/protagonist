@@ -57,3 +57,10 @@ jobs:
         env:
           PROTAG_UID: ${{ secrets.PROTAG_UID }}
         run: node whoop-cloud-feed.js
+      # REAL channel payouts from Mercury (the headline revenue signal). No-ops gracefully until MERCURY_TOKEN is set.
+      - name: Sync Mercury channel payouts -> Firestore
+        if: always()
+        env:
+          PROTAG_UID: ${{ secrets.PROTAG_UID }}
+          MERCURY_TOKEN: ${{ secrets.MERCURY_TOKEN }}
+        run: node mercury-feed.js
